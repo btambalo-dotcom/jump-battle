@@ -144,6 +144,11 @@ body.m-video .battle-only, body.m-battle .video-only, body.m-battle #videoOpts{d
       <h2>2. Jogadoras</h2>
       <p class="hint">Use camisetas de cores diferentes. Toque em “Gravar cor” com só uma pessoa na frente da câmera: o app aprende a cor da roupa e sabe quem é quem.</p>
       <div id="plist" style="display:grid;gap:10px"></div>
+      <div class="row"><label>Sensibilidade do pulo
+        <select id="sens" style="background:rgba(0,0,0,.35);color:var(--paper);border:2px solid rgba(255,248,236,.2);border-radius:12px;padding:10px 12px;font:inherit;font-size:18px;font-weight:800">
+          <option value="baixa">Baixa (só pulos bem altos)</option><option value="media">Média</option><option value="alta">Alta (pulinhos contam)</option>
+        </select></label></div>
+      <p class="hint">Na prévia acima aparece o esqueleto de cada uma. Só conta pulo quando estiver escrito “corpo inteiro ✓”: a câmera precisa ver dos pés à cabeça.</p>
       <button class="btn-add" id="btnAdd">+ jogadora</button>
     </div>
 
@@ -256,6 +261,7 @@ function renderPlayers(){
 }
 $("#btnAdd").onclick = ()=>{ cfg.players.push({name:"Jogadora "+(cfg.players.length+1),color:null}); save(); renderPlayers(); };
 $("#pairs").value = cfg.pairs; $("#pairs").oninput = e=>{ cfg.pairs = e.target.value; save(); };
+cfg.sens = cfg.sens || "media"; $("#sens").value=cfg.sens; $("#sens").onchange=e=>{ cfg.sens=e.target.value; save(); };
 for(const k of ["tPick","tJump","bonus"]){ $("#"+k).value = cfg[k]; $("#"+k).oninput = e=>{ cfg[k] = +e.target.value||cfg[k]; save(); }; }
 renderPlayers();
 
@@ -276,8 +282,8 @@ async function startCam(){
   $("#prevMsg").textContent = "Carregando detector de corpo…";
   try{
     const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-    const opts = d => ({ baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task", delegate:d },
-      runningMode:"VIDEO", numPoses:4, minPoseDetectionConfidence:.5, minTrackingConfidence:.5 });
+    const opts = d => ({ baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task", delegate:d },
+      runningMode:"VIDEO", numPoses:4, minPoseDetectionConfidence:.6, minPosePresenceConfidence:.6, minTrackingConfidence:.6 });
     try{ landmarker = await PoseLandmarker.createFromOptions(fs, opts("GPU")); }
     catch(e){ landmarker = await PoseLandmarker.createFromOptions(fs, opts("CPU")); }
   }catch(e){
@@ -290,45 +296,91 @@ async function startCam(){
 }
 $("#btnCam").onclick = ()=>{ unlockAudio(); if(!camOn) startCam(); };
 
-// ponto de rastreio (meio dos ombros) e tamanho de referência
+// ---------- Corpo inteiro ----------
+const VIS=.55, vis = p => (p.visibility??1);
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32],[27,29],[28,30]];
 function body(lm){
-  const ls=lm[11], rs=lm[12], lh=lm[23], rh=lm[24];
-  const sx=(ls.x+rs.x)/2, sy=(ls.y+rs.y)/2;
+  const ls=lm[11], rs=lm[12], lh=lm[23], rh=lm[24], lk=lm[25], rk=lm[26], la=lm[27], ra=lm[28];
+  const sx=(ls.x+rs.x)/2, sy=(ls.y+rs.y)/2, hx=(lh.x+rh.x)/2, hipY=(lh.y+rh.y)/2;
   const sw=Math.hypot(ls.x-rs.x, ls.y-rs.y) || .1;
-  const hipsOk = (lh.visibility??1)>.4 && (rh.visibility??1)>.4;
-  const hy = hipsOk ? (lh.y+rh.y)/2 : sy + sw*1.3;
-  return { x:sx, y:sy, sw, hy };
+  const ay=(la.y+ra.y)/2, H=Math.max(.05, ay-sy);
+  const full = [11,12,23,24,25,26,27,28].every(k=>vis(lm[k])>VIS) && la.y<.985 && ra.y<.985 && lm[0].y>0.01;
+  return { x:(sx+hx)/2, y:sy, sw, hy:hipY, hipY, kneeY:(lk.y+rk.y)/2, ay, lAnk:la.y, rAnk:ra.y, H, full, hw:Math.abs(lh.x-rh.x)||sw*.6 };
 }
-// cor média do tronco
-function torsoColor(lm){
-  const b = body(lm); const W=samp.width, H=samp.height;
-  const x0=Math.round((b.x-b.sw*.3)*W), x1=Math.round((b.x+b.sw*.3)*W);
-  const y0=Math.round((b.y+(b.hy-b.y)*.2)*H), y1=Math.round((b.y+(b.hy-b.y)*.75)*H);
+function regionColor(x0,x1,y0,y1){
+  const W=samp.width, H=samp.height;
+  x0=Math.round(x0*W); x1=Math.round(x1*W); y0=Math.round(y0*H); y1=Math.round(y1*H);
   const w=Math.max(2,x1-x0), h=Math.max(2,y1-y0);
   if(x0<0||y0<0||x0+w>W||y0+h>H) return null;
   const d = sctx.getImageData(x0,y0,w,h).data; let r=0,g=0,bl=0,n=0;
   for(let i=0;i<d.length;i+=16){ r+=d[i]; g+=d[i+1]; bl+=d[i+2]; n++; }
-  return [r/n|0, g/n|0, bl/n|0];
+  return n? [r/n|0, g/n|0, bl/n|0] : null;
 }
+function torsoColor(lm){ const b=body(lm); return regionColor(b.x-b.sw*.28, b.x+b.sw*.28, b.y+(b.hy-b.y)*.2, b.y+(b.hy-b.y)*.75); }
+function legColor(lm){ const b=body(lm); if(vis(lm[25])<VIS||vis(lm[26])<VIS) return null; return regionColor(b.x-b.hw*.45, b.x+b.hw*.45, b.hy+(b.kneeY-b.hy)*.15, b.hy+(b.kneeY-b.hy)*.7); }
 const cdist = (a,b)=>{ // distância com peso no tom (menos sensível à luz)
   const sa=a[0]+a[1]+a[2]+1, sb=b[0]+b[1]+b[2]+1;
   const ch = Math.hypot(a[0]/sa-b[0]/sb, a[1]/sa-b[1]/sb, a[2]/sa-b[2]/sb)*600;
   return ch + Math.abs(sa-sb)/12;
 };
 
-// associa poses detectadas às jogadoras
+// associa poses às jogadoras: cor da roupa (cima + baixo) + continuidade da posição
+const PX = [];
+let lastDet = [];
 function assign(){
-  const det = poses.map(lm=>({lm, b:body(lm), col:torsoColor(lm)}));
+  const tp = performance.now()/1000;
+  const det = poses.map(lm=>({lm, b:body(lm), col:torsoColor(lm), leg:legColor(lm)})).filter(d=>vis(d.lm[11])>VIS&&vis(d.lm[12])>VIS);
+  lastDet = det;
   const out = new Array(cfg.players.length).fill(null);
-  const used = new Set();
-  const pairs=[];
-  cfg.players.forEach((p,i)=>{ if(!p.color) return; det.forEach((d,j)=>{ if(d.col) pairs.push([cdist(p.color,d.col),i,j]); }); });
+  const used = new Set(), pairs=[];
+  cfg.players.forEach((p,i)=>{
+    const prev = PX[i] && tp-PX[i].t<1 ? PX[i] : null;
+    det.forEach((d,j)=>{
+      let c=0, any=false;
+      if(p.color && d.col){ c+=cdist(p.color,d.col); any=true; }
+      if(p.color2 && d.leg){ c+=cdist(p.color2,d.leg)*.6; any=true; }
+      if(prev){ c+=Math.hypot(d.b.x-prev.x, d.b.y-prev.y)*260; any=true; }
+      if(!any) c = 500 + (p.color? 0 : (1-d.b.x)*10 + i); // sem dados: ordem na tela
+      pairs.push([c,i,j]);
+    });
+  });
   pairs.sort((a,b)=>a[0]-b[0]);
-  for(const [dd,i,j] of pairs){ if(out[i]||used.has(j)||dd>140) continue; out[i]=det[j]; used.add(j); }
-  // sem cor gravada: preenche pela posição (esquerda→direita na tela)
-  const rest = det.filter((d,j)=>!used.has(j)).sort((a,b)=>b.b.x-a.b.x);
-  cfg.players.forEach((p,i)=>{ if(!out[i] && !p.color && rest.length) out[i]=rest.shift(); });
+  for(const [c,i,j] of pairs){ if(out[i]||used.has(j)) continue; if(cfg.players[i].color && c>260 && c<500) continue; out[i]=det[j]; used.add(j); }
+  out.forEach((d,i)=>{ if(d) PX[i]={x:d.b.x,y:d.b.y,t:tp}; });
   return out;
+}
+
+// detector de pulo: os dois tornozelos e o quadril sobem juntos e depois descem
+const SENS = {baixa:.10, media:.075, alta:.055};
+const J = [];
+function detect(assigned, tp){
+  const ev=[];
+  assigned.forEach((d,i)=>{
+    const s = J[i] || (J[i]={base:null,up:false,last:0,sm:null,H:0,full:false});
+    s.full = !!(d && d.b.full);
+    if(!s.full){ s.base=null; s.up=false; s.sm=null; return; }
+    const b=d.b, a=.55, cur={hy:b.hipY, l:b.lAnk, r:b.rAnk};
+    s.sm = s.sm ? {hy:s.sm.hy+(cur.hy-s.sm.hy)*a, l:s.sm.l+(cur.l-s.sm.l)*a, r:s.sm.r+(cur.r-s.sm.r)*a} : cur;
+    s.H = s.H ? s.H*.97+b.H*.03 : b.H;
+    const m=s.sm;
+    if(!s.base){ s.base={...m}; return; }
+    const thr = s.H*(SENS[cfg.sens]||.075);
+    const uh=s.base.hy-m.hy, ul=s.base.l-m.l, ur=s.base.r-m.r;
+    if(!s.up){
+      const k = (uh<thr*.35 && ul<thr*.35 && ur<thr*.35) ? .15 : .04;
+      if(!(ul>thr && ur>thr)) for(const key of ["hy","l","r"]) s.base[key]+=(m[key]-s.base[key])*k;
+      if(ul>thr && ur>thr && uh>thr*.6 && Math.abs(ul-ur)<thr*1.2 && tp-s.last>.2){ s.up=true; s.upAt=tp; }
+    } else {
+      const air=tp-s.upAt;
+      if(ul<thr*.35 && ur<thr*.35){ s.up=false; s.last=tp; if(air>.08 && air<1.1) ev.push({i,up:s.upAt}); }
+      else if(air>1.3){ s.up=false; s.base=null; }
+    }
+  });
+  return ev;
+}
+function drawSkeleton(ctx, lm, map, color, lw){
+  ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.lineCap="round";
+  for(const [a,b] of BONES){ if(vis(lm[a])<.4||vis(lm[b])<.4) continue; const [x1,y1]=map(lm[a].x,lm[a].y), [x2,y2]=map(lm[b].x,lm[b].y); ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
 }
 
 // ---------- Desenho ----------
@@ -351,8 +403,13 @@ function drawPlayers(ctx,cw,ch,map,dpr,assigned,showDivider){
     ctx.setLineDash([24*dpr,18*dpr]); ctx.lineWidth=6*dpr; ctx.strokeStyle="rgba(255,248,236,.85)";
     ctx.beginPath(); ctx.moveTo(cw/2,0); ctx.lineTo(cw/2,ch); ctx.stroke(); ctx.setLineDash([]);
   }
+  lastDet.forEach(d=>{ if(!assigned.includes(d)) drawSkeleton(ctx,d.lm,map,"rgba(255,255,255,.45)",4*dpr); });
   assigned.forEach((d,i)=>{
     if(!d) return; const [px,py]=map(d.b.x,d.b.y); const c=PCOLORS[i];
+    drawSkeleton(ctx,d.lm,map,c,6*dpr);
+    ctx.font=`900 ${18*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="top";
+    const okTxt = d.b.full ? "corpo inteiro ✓" : "mostre o corpo todo, dos pés à cabeça";
+    ctx.lineWidth=5*dpr; ctx.strokeStyle="rgba(27,20,48,.9)"; ctx.strokeText(okTxt,px,py+60*dpr); ctx.fillStyle=d.b.full?"#7be36a":"#ff9a9a"; ctx.fillText(okTxt,px,py+60*dpr);
     ctx.fillStyle=c; ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr;
     ctx.beginPath(); ctx.arc(px,py-60*dpr,16*dpr,0,7); ctx.fill(); ctx.stroke();
     const name = cfg.players[i].name || ("Jogadora "+(i+1));
@@ -502,9 +559,10 @@ function drawPip(ctx,cw,ch,dpr,assigned,corner){
   ctx.translate(x+w,y); ctx.scale(-1,1); ctx.drawImage(video,0,0,w,h); ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle="rgba(255,79,139,.28)"; ctx.fillRect(x,y,w/2,h); ctx.fillStyle="rgba(47,182,255,.28)"; ctx.fillRect(x+w/2,y,w/2,h);
   ctx.setLineDash([10*dpr,8*dpr]); ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.moveTo(x+w/2,y); ctx.lineTo(x+w/2,y+h); ctx.stroke(); ctx.setLineDash([]);
-  assigned.forEach((d,i)=>{ if(!d) return; const px=x+(1-d.b.x)*w, py=y+d.b.y*h;
+  const pmap=(lx,ly)=>[x+(1-lx)*w, y+ly*h];
+  assigned.forEach((d,i)=>{ if(!d) return; drawSkeleton(ctx,d.lm,pmap,d.b.full?PCOLORS[i]:"#ff6b6b",3*dpr); const px=x+(1-d.b.x)*w, py=y+d.b.y*h;
     ctx.fillStyle=PCOLORS[i]; ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.arc(px,py,9*dpr,0,7); ctx.fill(); ctx.stroke();
-    ctx.font=`900 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="bottom"; ctx.fillStyle="#fff"; ctx.fillText(cfg.players[i].name,px,py-12*dpr); });
+    ctx.font=`900 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="bottom"; ctx.fillStyle="#fff"; ctx.fillText(cfg.players[i].name+(d.b.full?"":" (pés!)"),px,py-12*dpr); });
   ctx.restore();
   ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr; ctx.beginPath(); ctx.roundRect(x,y,w,h,16*dpr); ctx.stroke();
 }
@@ -542,7 +600,7 @@ function nextRound(){
 }
 const clean = s => s.replace(/[\p{Extended_Pictographic}️]/gu,"").trim();
 
-function tick(now, assigned, cw){
+function tick(now, assigned, jev){
   if(G.paused || G.phase==="idle" || G.phase==="end") return;
   const left = Math.max(0, G.dur-(now-G.t0)); const secs = Math.ceil(left/1000);
   if(G.phase==="pick"){
@@ -561,13 +619,7 @@ function tick(now, assigned, cw){
     if(left<=0){ setPhase("jump", cfg.tJump); beep(990,.35); say("Pula!"); musicStart("jump"); }
   } else if(G.phase==="jump"){
     $("#phase").textContent="PULA! PULA! PULA!"; $("#count").textContent=secs;
-    assigned.forEach((d,i)=>{
-      const s=G.st[i]; if(!d || !s.side) return;
-      const y=d.b.y, th=d.b.sw*.32;
-      if(s.base===null) s.base=y;
-      if(!s.up){ s.base = s.base*.88 + y*.12; if(s.base-y > th){ s.up=true; } }
-      else if(s.base-y < th*.35){ s.up=false; s.jumps++; hop(s.side); beep(s.side==="L"?700:880,.05,.05); }
-    });
+    for(const e of jev){ const s=G.st[e.i]; if(!s || !s.side) continue; s.jumps++; hop(s.side); beep(s.side==="L"?700:880,.05,.05); }
     if(left<=0) finishRound();
   } else if(G.phase==="result"){
     if(left<=0) nextRound();
@@ -684,18 +736,12 @@ $("#vClear").onclick = ()=>{ if($("#vClear").dataset.sure){ V.cues=[]; saveCues(
 $("#vRestart").onclick = $("#vAgain").onclick = ()=>{ resetVideoScores(); V.player?.seekTo(0,true); V.player?.playVideo(); };
 $("#vQuit").onclick = $("#vBack").onclick = ()=>{ try{ V.player?.pauseVideo(); }catch(e){} setMarking(false); vmsg(""); $("#vgame").classList.add("hidden"); $("#setup").classList.remove("hidden"); renderPlayers(); cueInfo(); try{document.exitFullscreen?.()}catch(e){} };
 
-function videoTick(now, assigned){
+function videoTick(now, assigned, jev){
   if(!V.player?.getCurrentTime) return;
   const t=V.player.getCurrentTime(), playing=V.player.getPlayerState()===1;
   if(t < V.lastT-1){ V.st.forEach(s=>s.used.clear()); }
-  assigned.forEach((d,i)=>{ const s=V.st[i]; if(!d||!s) return;
-    s.side = d.b.x>.5?"L":"R";
-    if(!playing){ s.base=null; s.up=false; return; }
-    const y=d.b.y, th=d.b.sw*.32;
-    if(s.base===null) s.base=y;
-    if(!s.up){ s.base=s.base*.88+y*.12; if(s.base-y>th){ s.up=true; s.upAt=t-0.1; } }
-    else if(s.base-y<th*.35){ s.up=false; s.jumps++; scoreJump(i,s.upAt); }
-  });
+  assigned.forEach((d,i)=>{ const s=V.st[i]; if(d&&s) s.side = d.b.x>.5?"L":"R"; });
+  if(playing) for(const e of jev){ const s=V.st[e.i]; if(!s) continue; s.jumps++; scoreJump(e.i, t-(now/1000-e.up)); }
   if(playing && V.cues.some(c=>c>V.lastT && c<=t)) V.flash=1;
   V.lastT=t;
   if(Math.floor(now/250)!==V._hud){ V._hud=Math.floor(now/250); renderVHud(); }
@@ -770,6 +816,7 @@ function loop(now){
     try{ poses = landmarker.detectForVideo(video, now).landmarks || []; }catch(e){ poses=[]; }
   }
   const assigned = assign();
+  const jev = detect(assigned, now/1000);
 
   // calibração
   if(calib){
@@ -778,14 +825,14 @@ function loop(now){
     if(left<=0){
       const i=calib.i, btn=calib.btn; calib=null;
       if(poses.length!==1){ btn.textContent = poses.length? "Só 1 pessoa na frente!" : "Ninguém na câmera"; setTimeout(renderPlayers,1800); }
-      else { const c=torsoColor(poses[0]); if(c){ cfg.players[i].color=c; save(); beep(990,.2); } renderPlayers(); }
+      else { const c=torsoColor(poses[0]), c2=legColor(poses[0]); if(c){ cfg.players[i].color=c; cfg.players[i].color2=c2; save(); beep(990,.2); } renderPlayers(); }
     }
   }
 
   if(!$("#setup").classList.contains("hidden")){
     drawFrame($("#prev"), (ctx,cw,ch,map,dpr)=>drawPlayers(ctx,cw,ch,map,dpr,assigned,false));
   } else if(!$("#vgame").classList.contains("hidden")){
-    videoTick(now, assigned);
+    videoTick(now, assigned, jev);
     videoDraw(assigned);
   } else {
     const cv=$("#stage"), ctx=cv.getContext("2d"), dpr=Math.min(2,devicePixelRatio||1);
@@ -800,7 +847,7 @@ function loop(now){
     drawPower(ctx,cw,ch,dpr);
     drawPip(ctx,cw,ch,dpr,assigned);
     drawConfetti(ctx,ch,dpr);
-    tick(now, assigned);
+    tick(now, assigned, jev);
     if(G.phase==="jump"||G.phase==="pick") renderBoard();
   }
 }
