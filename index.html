@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Jump Battle das Meninas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@600;800;900&display=swap">
+<style>
+/* Layout: câmera em tela cheia dividida ao meio; opções no topo, contagem no centro, placar embaixo */
+:root{
+  --left:#ff4f8b; --left-ink:#fff;
+  --right:#2fb6ff; --right-ink:#fff;
+  --sun:#ffd23f; --ink:#1b1430; --paper:#fff8ec; --dim:rgba(27,20,48,.72);
+  --display:"Bungee","Arial Black",system-ui,sans-serif;
+  --body:"Nunito",system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--ink);color:var(--paper);font-family:var(--body);overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+button{font:inherit;cursor:pointer;border:0;border-radius:14px;padding:12px 18px;font-weight:900}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.hidden{display:none!important}
+
+/* ---------- Setup ---------- */
+#setup{position:fixed;inset:0;overflow:auto;padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left));
+  background:radial-gradient(circle at 15% 10%,rgba(255,79,139,.35),transparent 45%),radial-gradient(circle at 85% 90%,rgba(47,182,255,.35),transparent 45%),var(--ink)}
+.wrap{max-width:760px;margin:0 auto;display:grid;gap:20px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(34px,7vw,64px);line-height:.95;margin:8px 0 0;text-wrap:balance}
+h1 .l{color:var(--left)} h1 .r{color:var(--right)}
+.lead{font-size:18px;margin:0;opacity:.85;max-width:60ch}
+.card{background:rgba(255,248,236,.06);border:2px solid rgba(255,248,236,.14);border-radius:20px;padding:18px;display:grid;gap:14px}
+.card h2{font-family:var(--display);font-weight:400;font-size:20px;margin:0;letter-spacing:.02em;color:var(--sun)}
+.player{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center}
+.swatch{width:38px;height:38px;border-radius:50%;border:3px dashed rgba(255,248,236,.4)}
+.swatch.ok{border-style:solid;border-color:var(--paper)}
+input[type=text],input[type=number],textarea{width:100%;min-width:0;background:rgba(0,0,0,.35);color:var(--paper);border:2px solid rgba(255,248,236,.2);border-radius:12px;padding:10px 12px;font:inherit;font-size:18px;font-weight:800}
+textarea{min-height:170px;font-size:16px;line-height:1.5}
+.btn-cal{background:var(--sun);color:var(--ink)}
+.btn-x{background:transparent;color:var(--paper);border:2px solid rgba(255,248,236,.25);padding:10px 14px}
+.btn-add{background:transparent;color:var(--sun);border:2px dashed var(--sun);justify-self:start}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row label{display:grid;gap:6px;font-weight:800;flex:1 1 160px}
+.hint{font-size:14px;opacity:.75;margin:0}
+.preview{position:relative;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%}
+.preview canvas{width:100%;height:100%;display:block}
+.preview .msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;font-weight:900;font-size:20px;background:var(--dim)}
+.big{font-family:var(--display);font-weight:400;font-size:26px;padding:18px 26px;border-radius:18px}
+.go{background:linear-gradient(90deg,var(--left),var(--right));color:#fff;width:100%}
+.cam{background:var(--paper);color:var(--ink);width:100%}
+
+/* ---------- Game ---------- */
+#game{position:fixed;inset:0}
+#stage{position:absolute;inset:0;width:100%;height:100%;display:block}
+.opt{position:absolute;top:max(14px,env(safe-area-inset-top));width:calc(50% - 24px);text-align:center;border-radius:22px;padding:10px 12px;
+  font-family:var(--display);font-size:clamp(30px,6.5vw,76px);line-height:1;box-shadow:0 8px 0 rgba(0,0,0,.25);transition:transform .25s}
+#optL{left:max(12px,env(safe-area-inset-left));background:var(--left);color:var(--left-ink)}
+#optR{right:max(12px,env(safe-area-inset-right));background:var(--right);color:var(--right-ink)}
+.opt.win{transform:scale(1.08) rotate(-2deg);outline:6px solid var(--sun)}
+.opt small{display:block;font-family:var(--body);font-weight:900;font-size:clamp(14px,2vw,22px);margin-top:6px;opacity:.9}
+#center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;width:min(90vw,900px)}
+#phase{font-family:var(--display);font-size:clamp(28px,5vw,60px);text-shadow:0 4px 0 rgba(0,0,0,.5);text-wrap:balance}
+#count{font-family:var(--display);font-size:clamp(90px,20vw,240px);line-height:1;color:var(--sun);text-shadow:0 8px 0 rgba(0,0,0,.45)}
+#board{position:absolute;left:0;right:0;bottom:0;padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+  display:flex;gap:10px;justify-content:center;flex-wrap:wrap;background:linear-gradient(transparent,rgba(27,20,48,.85) 40%)}
+.chip{display:flex;align-items:center;gap:10px;background:rgba(27,20,48,.8);border:3px solid var(--c,#fff);border-radius:999px;padding:6px 16px 6px 8px;font-weight:900;font-size:clamp(16px,2.4vw,24px)}
+.chip .dot{width:30px;height:30px;border-radius:50%;background:var(--c,#fff)}
+.chip .pts{font-family:var(--display);font-weight:400;color:var(--sun);font-variant-numeric:tabular-nums}
+.chip .j{opacity:.8;font-size:.8em}
+#controls{position:absolute;right:max(12px,env(safe-area-inset-right));top:50%;transform:translateY(-50%);display:grid;gap:8px}
+#controls button{background:rgba(27,20,48,.75);color:var(--paper);border:2px solid rgba(255,248,236,.3);padding:10px 12px;font-size:15px}
+#final{position:absolute;inset:0;display:grid;place-items:center;background:rgba(27,20,48,.9);padding:20px}
+#final .box{text-align:center;display:grid;gap:18px;max-width:640px;width:100%}
+#final h2{font-family:var(--display);font-weight:400;font-size:clamp(36px,7vw,72px);margin:0;color:var(--sun)}
+#final ol{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+#final li{display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:900;padding:12px 18px;border-radius:16px;background:rgba(255,248,236,.08);border:3px solid var(--c)}
+#final li b{font-family:var(--display);font-weight:400;color:var(--sun)}
+@media (prefers-reduced-motion:reduce){.opt{transition:none}}
+.opt{display:none!important}
+#center{top:max(10px,env(safe-area-inset-top));transform:translateX(-50%)}
+#phase{font-size:clamp(22px,3.6vw,46px)}
+#count{font-size:clamp(50px,9vw,110px)}
+.modebtn{flex:1 1 200px;display:grid;gap:4px;text-align:left;background:rgba(0,0,0,.3);color:var(--paper);border:3px solid rgba(255,248,236,.2);font-size:20px;padding:16px 18px;border-radius:18px}
+.modebtn small{font-weight:700;font-size:14px;opacity:.8}
+.modebtn.on{background:linear-gradient(90deg,rgba(255,79,139,.35),rgba(47,182,255,.35));border-color:var(--sun)}
+body.m-video .battle-only, body.m-battle .video-only, body.m-battle #videoOpts{display:none!important}
+#vgame{position:fixed;inset:0;background:#000}
+#ytwrap{position:absolute;inset:0;pointer-events:none}
+#ytwrap iframe{width:100%;height:100%;border:0;display:block}
+#vcanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#vsides{position:absolute;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;gap:10px;pointer-events:none}
+#vsides span{font-family:var(--display);font-size:clamp(16px,2.4vw,26px);padding:6px 16px;border-radius:999px;border:3px solid #fff}
+#vcontrols{position:absolute;right:max(10px,env(safe-area-inset-right));top:50%;transform:translateY(-50%);display:grid;gap:6px}
+#vcontrols button{background:rgba(27,20,48,.8);color:var(--paper);border:2px solid rgba(255,248,236,.3);padding:8px 12px;font-size:14px}
+#vcontrols button.on{background:var(--sun);color:var(--ink)}
+#markbar{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(255,210,63,.92);color:var(--ink);font-size:clamp(18px,2.6vw,28px);padding:20px 28px;border-radius:20px;max-width:90vw}
+#vmsg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(27,20,48,.92);border:3px solid var(--sun);padding:20px 24px;border-radius:18px;font-size:20px;font-weight:800;max-width:min(90vw,640px);text-align:center}
+#vhud{position:absolute;left:0;right:0;bottom:0;padding:10px max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));display:flex;gap:10px;justify-content:center;flex-wrap:wrap;pointer-events:none}
+.chip .tag{font-family:var(--display);font-size:.75em;padding:2px 10px;border-radius:999px;background:rgba(255,255,255,.15)}
+.chip .stars{font-size:.8em;opacity:.9}
+#vfinal{position:absolute;inset:0;display:grid;place-items:center;background:rgba(27,20,48,.9);padding:20px}
+#vfinal .box{text-align:center;display:grid;gap:18px;max-width:640px;width:100%}
+#vfinal h2{font-family:var(--display);font-weight:400;font-size:clamp(36px,7vw,72px);margin:0;color:var(--sun)}
+#vfinal ol{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+#vfinal li{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:22px;font-weight:900;padding:12px 18px;border-radius:16px;background:rgba(255,248,236,.08);border:3px solid var(--c)}
+#vfinal li b{font-family:var(--display);font-weight:400;color:var(--sun)}
+.filebtn{background:var(--sun);color:var(--ink);font-weight:900;padding:12px 18px;border-radius:14px;cursor:pointer;flex:0 0 auto!important;display:inline-block!important}
+</style>
+</head>
+<body>
+
+<!-- ================= SETUP ================= -->
+<section id="setup">
+  <div class="wrap">
+    <h1><span class="l">Jump</span> <span class="r">Battle</span></h1>
+    <p class="lead">Cada uma escolhe um lado, pula pra fazer o seu lado ganhar, e a câmera do iPad conta tudo.</p>
+
+    <div class="card">
+      <h2>Modo de jogo</h2>
+      <div class="row">
+        <button class="modebtn" data-mode="video" id="modeVideo">🎬 Vídeo do YouTube<small>pular no ritmo do vídeo</small></button>
+        <button class="modebtn" data-mode="battle" id="modeBattle">🎮 Batalha<small>personagens e perguntas</small></button>
+      </div>
+      <div id="videoOpts" style="display:grid;gap:12px">
+        <label style="display:grid;gap:6px;font-weight:800">Link do vídeo<input type="text" id="ytUrl"></label>
+        <div class="row">
+          <label>Lado esquerdo<input type="text" id="sideL"></label>
+          <label>Lado direito<input type="text" id="sideR"></label>
+        </div>
+        <p class="hint" id="cueInfo"></p>
+        <p class="hint" id="fileWarn" hidden style="color:#ffd23f">Abra o jogo pelo atalho “Jump Battle” da Área de Trabalho: aberto direto pelo arquivo, o YouTube não toca.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>1. Câmera</h2>
+      <div class="preview"><canvas id="prev"></canvas><div class="msg" id="prevMsg">Toque em “Ligar câmera”.<br>Deixe o iPad de pé, a uns 3 metros, mostrando as duas do joelho pra cima.</div></div>
+      <button class="cam big" id="btnCam">Ligar câmera</button>
+    </div>
+
+    <div class="card">
+      <h2>2. Jogadoras</h2>
+      <p class="hint">Use camisetas de cores diferentes. Toque em “Gravar cor” com só uma pessoa na frente da câmera: o app aprende a cor da roupa e sabe quem é quem.</p>
+      <div id="plist" style="display:grid;gap:10px"></div>
+      <button class="btn-add" id="btnAdd">+ jogadora</button>
+    </div>
+
+    <div class="card battle-only">
+      <h2>3. Rodadas</h2>
+      <p class="hint">Uma rodada por linha: <b>esquerda | direita</b></p>
+      <textarea id="pairs" spellcheck="false"></textarea>
+      <div class="row">
+        <label>Segundos pra escolher<input type="number" id="tPick" min="3" max="20"></label>
+        <label>Segundos pulando<input type="number" id="tJump" min="5" max="60"></label>
+        <label>Bônus do lado vencedor<input type="number" id="bonus" min="0" max="100"></label>
+      </div>
+    </div>
+
+    <div class="card battle-only">
+      <h2>4. Fundo</h2>
+      <p class="hint">O jogo já vem com cenário animado e dois personagens. Se quiser, escolha um vídeo seu para tocar atrás dos personagens.</p>
+      <div class="row" style="align-items:center">
+        <label class="filebtn">Escolher vídeo<input type="file" id="bgFile" accept="video/*" hidden></label>
+        <button class="btn-x" id="bgClear">Usar cenário animado</button>
+        <span id="bgName" class="hint">Cenário animado</span>
+      </div>
+    </div>
+
+    <button class="go big" id="btnGo">Começar!</button>
+    <p class="hint battle-only">Ponto: cada pulo vale 1. Quem estiver no lado que pulou mais ganha o bônus.</p>
+    <p class="hint video-only">Pulo no tempo certo: PERFEITO vale 3, BOM vale 1. Sem tempos marcados, cada pulo vale 1.</p>
+  </div>
+</section>
+
+<!-- ================= VÍDEO ================= -->
+<section id="vgame" class="hidden">
+  <div id="ytwrap"><div id="yt"></div></div>
+  <canvas id="vcanvas"></canvas>
+  <div id="vsides"></div>
+  <div id="vcontrols">
+    <button id="vPause">Pausar</button>
+    <button id="vRestart">Recomeçar</button>
+    <button id="vMark">Marcar tempos</button>
+    <button id="vClear">Apagar tempos</button>
+    <button id="vQuit">Sair</button>
+  </div>
+  <button id="markbar" class="hidden">Aperte <b>ESPAÇO</b> (ou toque aqui) toda vez que o vídeo mandar pular · <span id="markN">0</span> marcados</button>
+  <div id="vmsg" class="hidden"></div>
+  <div id="vhud"></div>
+  <div id="vfinal" class="hidden"><div class="box">
+    <h2>Fim do vídeo!</h2>
+    <ol id="vrank"></ol>
+    <div class="row"><button class="go big" id="vAgain">Jogar de novo</button><button class="cam big" id="vBack">Ajustes</button></div>
+  </div></div>
+</section>
+
+<!-- ================= GAME ================= -->
+<section id="game" class="hidden">
+  <canvas id="stage"></canvas>
+  <div class="opt" id="optL"></div>
+  <div class="opt" id="optR"></div>
+  <div id="center"><div id="phase"></div><div id="count"></div></div>
+  <div id="controls">
+    <button id="btnMusic">Música: sim</button>
+    <button id="btnPause">Pausar</button>
+    <button id="btnSkip">Pular rodada</button>
+    <button id="btnQuit">Sair</button>
+  </div>
+  <div id="board"></div>
+  <div id="final" class="hidden"><div class="box">
+    <h2>Fim de jogo!</h2>
+    <ol id="rank"></ol>
+    <div class="row"><button class="go big" id="btnAgain">Jogar de novo</button><button class="cam big" id="btnBack">Ajustes</button></div>
+  </div></div>
+</section>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = s => document.querySelector(s);
+const PCOLORS = ["#ff4f8b","#2fb6ff","#ffd23f","#7be36a"];
+const DEFAULT_PAIRS = `6 | 7
+🍕 Pizza | 🍔 Hambúrguer
+🐶 Cachorro | 🐱 Gato
+🏖️ Praia | ⛄ Neve
+🍫 Chocolate | 🍓 Morango
+🦄 Unicórnio | 🐉 Dragão
+☀️ Dia | 🌙 Noite
+🍦 Sorvete | 🎂 Bolo`;
+
+// ---------- Estado salvo ----------
+let cfg = { players:[{name:"Filha 1",color:null},{name:"Filha 2",color:null}], pairs:DEFAULT_PAIRS, tPick:6, tJump:12, bonus:10 };
+try{ const s = JSON.parse(localStorage.getItem("jb-cfg")||"null"); if(s) cfg = {...cfg,...s}; }catch(e){}
+const save = () => { try{ localStorage.setItem("jb-cfg", JSON.stringify(cfg)); }catch(e){} };
+
+// ---------- Setup UI ----------
+function renderPlayers(){
+  const el = $("#plist"); el.innerHTML = "";
+  cfg.players.forEach((p,i)=>{
+    const row = document.createElement("div"); row.className="player";
+    const sw = document.createElement("div"); sw.className = "swatch"+(p.color?" ok":"");
+    sw.style.background = p.color ? `rgb(${p.color.join(",")})` : "transparent";
+    sw.style.boxShadow = `0 0 0 4px ${PCOLORS[i]}`;
+    const inp = document.createElement("input"); inp.type="text"; inp.id="pname"+i; inp.value=p.name; inp.placeholder="Nome";
+    inp.oninput = ()=>{ p.name = inp.value; save(); };
+    const cal = document.createElement("button"); cal.className="btn-cal"; cal.textContent = p.color?"Regravar cor":"Gravar cor";
+    cal.onclick = ()=>calibrate(i, cal);
+    const x = document.createElement("button"); x.className="btn-x"; x.textContent="✕"; x.setAttribute("aria-label","Remover");
+    x.onclick = ()=>{ if(cfg.players.length>1){ cfg.players.splice(i,1); save(); renderPlayers(); } };
+    row.append(sw,inp,cal,x); el.append(row);
+  });
+  $("#btnAdd").classList.toggle("hidden", cfg.players.length>=4);
+}
+$("#btnAdd").onclick = ()=>{ cfg.players.push({name:"Jogadora "+(cfg.players.length+1),color:null}); save(); renderPlayers(); };
+$("#pairs").value = cfg.pairs; $("#pairs").oninput = e=>{ cfg.pairs = e.target.value; save(); };
+for(const k of ["tPick","tJump","bonus"]){ $("#"+k).value = cfg[k]; $("#"+k).oninput = e=>{ cfg[k] = +e.target.value||cfg[k]; save(); }; }
+renderPlayers();
+
+// ---------- Câmera + pose ----------
+const video = document.createElement("video"); video.playsInline = true; video.muted = true; video.setAttribute("playsinline","");
+const samp = document.createElement("canvas"); const sctx = samp.getContext("2d",{willReadFrequently:true});
+let landmarker = null, poses = [], camOn = false, lastTs = -1;
+
+async function startCam(){
+  $("#prevMsg").textContent = "Abrindo câmera…";
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
+    video.srcObject = stream; await video.play();
+  }catch(e){
+    $("#prevMsg").innerHTML = "Não consegui abrir a câmera.<br>Abra este app pelo Safari num endereço https:// e permita a câmera.";
+    return;
+  }
+  $("#prevMsg").textContent = "Carregando detector de corpo…";
+  try{
+    const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    const opts = d => ({ baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task", delegate:d },
+      runningMode:"VIDEO", numPoses:4, minPoseDetectionConfidence:.5, minTrackingConfidence:.5 });
+    try{ landmarker = await PoseLandmarker.createFromOptions(fs, opts("GPU")); }
+    catch(e){ landmarker = await PoseLandmarker.createFromOptions(fs, opts("CPU")); }
+  }catch(e){
+    $("#prevMsg").textContent = "Falha ao carregar o detector. Confira a internet e recarregue.";
+    return;
+  }
+  camOn = true; $("#prevMsg").classList.add("hidden"); $("#btnCam").textContent = "Câmera ligada ✓";
+  try{ await navigator.wakeLock?.request("screen"); }catch(e){}
+  requestAnimationFrame(loop);
+}
+$("#btnCam").onclick = ()=>{ unlockAudio(); if(!camOn) startCam(); };
+
+// ponto de rastreio (meio dos ombros) e tamanho de referência
+function body(lm){
+  const ls=lm[11], rs=lm[12], lh=lm[23], rh=lm[24];
+  const sx=(ls.x+rs.x)/2, sy=(ls.y+rs.y)/2;
+  const sw=Math.hypot(ls.x-rs.x, ls.y-rs.y) || .1;
+  const hipsOk = (lh.visibility??1)>.4 && (rh.visibility??1)>.4;
+  const hy = hipsOk ? (lh.y+rh.y)/2 : sy + sw*1.3;
+  return { x:sx, y:sy, sw, hy };
+}
+// cor média do tronco
+function torsoColor(lm){
+  const b = body(lm); const W=samp.width, H=samp.height;
+  const x0=Math.round((b.x-b.sw*.3)*W), x1=Math.round((b.x+b.sw*.3)*W);
+  const y0=Math.round((b.y+(b.hy-b.y)*.2)*H), y1=Math.round((b.y+(b.hy-b.y)*.75)*H);
+  const w=Math.max(2,x1-x0), h=Math.max(2,y1-y0);
+  if(x0<0||y0<0||x0+w>W||y0+h>H) return null;
+  const d = sctx.getImageData(x0,y0,w,h).data; let r=0,g=0,bl=0,n=0;
+  for(let i=0;i<d.length;i+=16){ r+=d[i]; g+=d[i+1]; bl+=d[i+2]; n++; }
+  return [r/n|0, g/n|0, bl/n|0];
+}
+const cdist = (a,b)=>{ // distância com peso no tom (menos sensível à luz)
+  const sa=a[0]+a[1]+a[2]+1, sb=b[0]+b[1]+b[2]+1;
+  const ch = Math.hypot(a[0]/sa-b[0]/sb, a[1]/sa-b[1]/sb, a[2]/sa-b[2]/sb)*600;
+  return ch + Math.abs(sa-sb)/12;
+};
+
+// associa poses detectadas às jogadoras
+function assign(){
+  const det = poses.map(lm=>({lm, b:body(lm), col:torsoColor(lm)}));
+  const out = new Array(cfg.players.length).fill(null);
+  const used = new Set();
+  const pairs=[];
+  cfg.players.forEach((p,i)=>{ if(!p.color) return; det.forEach((d,j)=>{ if(d.col) pairs.push([cdist(p.color,d.col),i,j]); }); });
+  pairs.sort((a,b)=>a[0]-b[0]);
+  for(const [dd,i,j] of pairs){ if(out[i]||used.has(j)||dd>140) continue; out[i]=det[j]; used.add(j); }
+  // sem cor gravada: preenche pela posição (esquerda→direita na tela)
+  const rest = det.filter((d,j)=>!used.has(j)).sort((a,b)=>b.b.x-a.b.x);
+  cfg.players.forEach((p,i)=>{ if(!out[i] && !p.color && rest.length) out[i]=rest.shift(); });
+  return out;
+}
+
+// ---------- Desenho ----------
+function drawFrame(cv, overlay){
+  const ctx = cv.getContext("2d"); const dpr = Math.min(2, devicePixelRatio||1);
+  const cw = cv.clientWidth*dpr, ch = cv.clientHeight*dpr;
+  if(cv.width!==cw||cv.height!==ch){ cv.width=cw; cv.height=ch; }
+  const vw=video.videoWidth, vh=video.videoHeight; if(!vw) return null;
+  const s=Math.max(cw/vw, ch/vh), dx=(cw-vw*s)/2, dy=(ch-vh*s)/2;
+  ctx.save(); ctx.translate(cw,0); ctx.scale(-1,1); ctx.drawImage(video,dx,dy,vw*s,vh*s); ctx.restore();
+  const map = (x,y)=>[cw-(x*vw*s+dx), y*vh*s+dy];
+  if(overlay) overlay(ctx,cw,ch,map,dpr);
+  return {cw,ch,map};
+}
+
+function drawPlayers(ctx,cw,ch,map,dpr,assigned,showDivider){
+  if(showDivider){
+    ctx.fillStyle="rgba(255,79,139,.13)"; ctx.fillRect(0,0,cw/2,ch);
+    ctx.fillStyle="rgba(47,182,255,.13)"; ctx.fillRect(cw/2,0,cw/2,ch);
+    ctx.setLineDash([24*dpr,18*dpr]); ctx.lineWidth=6*dpr; ctx.strokeStyle="rgba(255,248,236,.85)";
+    ctx.beginPath(); ctx.moveTo(cw/2,0); ctx.lineTo(cw/2,ch); ctx.stroke(); ctx.setLineDash([]);
+  }
+  assigned.forEach((d,i)=>{
+    if(!d) return; const [px,py]=map(d.b.x,d.b.y); const c=PCOLORS[i];
+    ctx.fillStyle=c; ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr;
+    ctx.beginPath(); ctx.arc(px,py-60*dpr,16*dpr,0,7); ctx.fill(); ctx.stroke();
+    const name = cfg.players[i].name || ("Jogadora "+(i+1));
+    ctx.font=`900 ${26*dpr}px Nunito, system-ui`; const tw=ctx.measureText(name).width;
+    ctx.fillStyle="rgba(27,20,48,.85)"; ctx.beginPath(); ctx.roundRect(px-tw/2-14*dpr,py-130*dpr,tw+28*dpr,44*dpr,22*dpr); ctx.fill();
+    ctx.strokeStyle=c; ctx.stroke(); ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(name,px,py-108*dpr);
+    const st = G.st[i];
+    if(G.phase==="jump" && st){ ctx.font=`400 ${54*dpr}px Bungee, sans-serif`; ctx.fillStyle="#ffd23f"; ctx.fillText(st.jumps, px, py+10*dpr); }
+  });
+}
+
+// ---------- Cenário e personagens ----------
+const bgVideo = document.createElement("video"); bgVideo.loop=true; bgVideo.muted=true; bgVideo.playsInline=true; bgVideo.setAttribute("playsinline",""); let bgOn=false;
+$("#bgFile").onchange = e=>{ const f=e.target.files[0]; if(!f) return; bgVideo.src=URL.createObjectURL(f); bgVideo.play().catch(()=>{}); bgOn=true; $("#bgName").textContent=f.name; };
+$("#bgClear").onclick = ()=>{ bgOn=false; bgVideo.pause(); $("#bgName").textContent="Cenário animado"; $("#bgFile").value=""; };
+
+const CH = { L:{y:0,vy:0,sq:0,c:"#ff4f8b",c2:"#b8125a"}, R:{y:0,vy:0,sq:0,c:"#2fb6ff",c2:"#0a5f9e"} };
+const clouds = Array.from({length:6},()=>({x:Math.random()*1.2-.1,y:.05+Math.random()*.22,s:.6+Math.random()*.8,v:.0004+Math.random()*.0006}));
+const crowd = Array.from({length:44},(_,i)=>({x:i/43,h:Math.random(),c:["#ff4f8b","#2fb6ff","#ffd23f","#7be36a","#b388ff","#ff9f43"][i%6],p:Math.random()*6}));
+function hop(side,power=1){ const c=CH[side]; if(c.y>=-.02) c.vy=-(.075+.02*power); else c.vy=Math.min(c.vy,-.06); }
+const emojiOf = s => (String(s).match(/\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*/gu)||[]).join("");
+
+function drawScene(ctx,cw,ch,dpr,t){
+  const jump = G.phase==="jump", groundY = ch*.8;
+  if(bgOn && bgVideo.readyState>=2){
+    const vw=bgVideo.videoWidth, vh=bgVideo.videoHeight, s=Math.max(cw/vw,ch/vh);
+    ctx.drawImage(bgVideo,(cw-vw*s)/2,(ch-vh*s)/2,vw*s,vh*s);
+    ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(0,0,cw,ch);
+    return groundY;
+  }
+  const g=ctx.createLinearGradient(0,0,0,groundY);
+  if(jump){ g.addColorStop(0,"#4a1f7a"); g.addColorStop(.55,"#ff4f8b"); g.addColorStop(1,"#ffb347"); }
+  else { g.addColorStop(0,"#2b8cff"); g.addColorStop(1,"#c4ecff"); }
+  ctx.fillStyle=g; ctx.fillRect(0,0,cw,groundY);
+  ctx.save(); ctx.translate(cw/2,groundY*.6); ctx.rotate(t*(jump?.0007:.00012));
+  ctx.fillStyle = jump?"rgba(255,230,120,.18)":"rgba(255,255,255,.16)";
+  const R=Math.hypot(cw,ch);
+  for(let i=0;i<16;i++){ ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,R,i*Math.PI/8,i*Math.PI/8+Math.PI/16); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  clouds.forEach(c=>{ c.x+=c.v*(jump?3:1); if(c.x>1.2) c.x=-.25; const x=c.x*cw,y=c.y*ch,r=38*c.s*dpr;
+    ctx.fillStyle="rgba(255,255,255,.9)"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.arc(x+r,y-r*.45,r*1.15,0,7); ctx.arc(x+r*2.1,y,r*.9,0,7); ctx.fill(); });
+  crowd.forEach(p=>{ const b=Math.abs(Math.sin(t*(jump?.013:.003)+p.p))*(jump?20:6)*dpr; const x=p.x*cw, r=(16+p.h*8)*dpr, y=groundY-r*.5-b;
+    ctx.fillStyle=p.c; ctx.globalAlpha=.85; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(x,y-r*1.25,r*.7,0,7); ctx.fill();
+    if(jump){ ctx.strokeStyle=p.c; ctx.lineWidth=5*dpr; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(x-r*.7,y-r*.4); ctx.lineTo(x-r*1.2,y-r*1.9); ctx.moveTo(x+r*.7,y-r*.4); ctx.lineTo(x+r*1.2,y-r*1.9); ctx.stroke(); }
+    ctx.globalAlpha=1; });
+  const gg=ctx.createLinearGradient(0,groundY,0,ch); gg.addColorStop(0,"#4ccf6e"); gg.addColorStop(1,"#1d7a3a");
+  ctx.fillStyle=gg; ctx.fillRect(0,groundY,cw,ch-groundY);
+  ctx.fillStyle="rgba(255,255,255,.08)"; for(let i=0;i<14;i+=2) ctx.fillRect(i*cw/14,groundY,cw/14,ch-groundY);
+  ctx.fillStyle="rgba(255,255,255,.85)"; ctx.fillRect(cw/2-4*dpr,groundY,8*dpr,ch-groundY);
+  return groundY;
+}
+
+function fitText(ctx,txt,maxW,px,font){ const fam = font==="400" ? "Bungee, sans-serif" : "Nunito, system-ui"; let s=px; do{ ctx.font=`${font} ${s}px ${fam}`; if(ctx.measureText(txt).width<=maxW) break; s*=.9; }while(s>8); return s; }
+
+function drawChar(ctx,side,cx,groundY,size,label,t,dpr,state){
+  const c=CH[side], dir = side==="L"?1:-1;
+  c.vy += .006; c.y += c.vy; if(c.y>0){ if(c.vy>.02) c.sq=.28; c.y=0; c.vy=0; }
+  c.sq *= .82;
+  if(state==="win" && c.y===0) c.vy=-.085;
+  const w=size*(1+c.sq*.5), h=size*1.15*(1-c.sq*.45), lift=c.y*size*2.4;
+  const legs=size*.28, bx=cx, by=groundY-legs-h/2+lift;
+  const air = c.y<-.01, lose = state==="lose", happy = air || state==="win";
+  const sh=Math.max(.35,1+c.y*2.2);
+  ctx.fillStyle="rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(cx,groundY,size*.5*sh,size*.08*sh,0,0,7); ctx.fill();
+  ctx.save(); ctx.translate(bx,by); if(lose) ctx.rotate(Math.sin(t*.004)*.12);
+  ctx.lineCap="round";
+  // pernas
+  ctx.strokeStyle=c.c2; ctx.lineWidth=size*.11;
+  const spread = air? .3 : .2, lk = air? -legs*.25 : 0;
+  for(const s of [-1,1]){ ctx.beginPath(); ctx.moveTo(s*w*.18,h*.4); ctx.lineTo(s*size*spread,h/2+legs+lk); ctx.stroke();
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.ellipse(s*size*spread+s*size*.05,h/2+legs+lk,size*.11,size*.06,0,0,7); ctx.fill(); }
+  // braços
+  for(const s of [-1,1]){
+    const a = lose ? -.7 : happy ? 1.25+Math.sin(t*.02+s)*.15 : .25+Math.sin(t*.006+(s>0?1.6:0))*.35;
+    const sx=s*w*.47, sy=-h*.05, L=size*.42, ex=sx+s*Math.cos(a)*L, ey=sy-Math.sin(a)*L;
+    ctx.strokeStyle=c.c2; ctx.lineWidth=size*.1; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(ex,ey,size*.085,0,7); ctx.fill();
+  }
+  // corpo
+  ctx.fillStyle=c.c; ctx.strokeStyle="#fff"; ctx.lineWidth=5*dpr;
+  ctx.beginPath(); ctx.roundRect(-w/2,-h/2,w,h,size*.38); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.22)"; ctx.beginPath(); ctx.ellipse(-w*.22,-h*.3,w*.12,h*.1,-.5,0,7); ctx.fill();
+  // olhos
+  const ey=-h*.27, blink = ((t/1000+(side==="L"?0:1.7))%3.6)<.12;
+  for(const s of [-1,1]){
+    const ex=s*w*.17;
+    if(lose){ ctx.strokeStyle="#1b1430"; ctx.lineWidth=size*.04; const r=size*.06; ctx.beginPath(); ctx.moveTo(ex-r,ey-r); ctx.lineTo(ex+r,ey+r); ctx.moveTo(ex+r,ey-r); ctx.lineTo(ex-r,ey+r); ctx.stroke(); continue; }
+    if(blink){ ctx.strokeStyle="#1b1430"; ctx.lineWidth=size*.035; ctx.beginPath(); ctx.moveTo(ex-size*.08,ey); ctx.lineTo(ex+size*.08,ey); ctx.stroke(); continue; }
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(ex,ey,size*.11,0,7); ctx.fill();
+    ctx.fillStyle="#1b1430"; ctx.beginPath(); ctx.arc(ex+dir*size*.035,ey+(air?-size*.03:size*.01),size*.055,0,7); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(ex+dir*size*.035+size*.02,ey-size*.02,size*.017,0,7); ctx.fill();
+  }
+  // boca
+  const my=-h*.08; ctx.strokeStyle="#1b1430"; ctx.fillStyle="#7a1030"; ctx.lineWidth=size*.035;
+  if(lose){ ctx.beginPath(); ctx.arc(0,my+size*.08,size*.08,Math.PI*1.15,Math.PI*1.85); ctx.stroke(); }
+  else if(happy){ ctx.beginPath(); ctx.ellipse(0,my+size*.02,size*.1,size*.08,0,0,Math.PI); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.arc(0,my-size*.02,size*.09,Math.PI*.15,Math.PI*.85); ctx.stroke(); }
+  // bochechas
+  ctx.fillStyle="rgba(255,255,255,.3)"; for(const s of [-1,1]){ ctx.beginPath(); ctx.ellipse(s*w*.3,my,size*.06,size*.035,0,0,7); ctx.fill(); }
+  // rótulo na barriga
+  const emo=emojiOf(label), word=clean(label)||label;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  if(emo){ ctx.font=`${size*.36}px system-ui, "Apple Color Emoji","Segoe UI Emoji"`; ctx.fillText(emo,0,h*.24); }
+  else { const px=fitText(ctx,word,w*.78,size*.42,"400"); ctx.font=`400 ${px}px Bungee, sans-serif`; ctx.lineWidth=6*dpr; ctx.strokeStyle=c.c2; ctx.strokeText(word,0,h*.24); ctx.fillStyle="#fff"; ctx.fillText(word,0,h*.24); }
+  // estrelinhas de tontura
+  if(lose){ ctx.fillStyle="#ffd23f"; for(let k=0;k<3;k++){ const a=t*.004+k*2.1; star(ctx,Math.cos(a)*w*.45,-h*.62+Math.sin(a)*size*.08,size*.07); } }
+  ctx.restore();
+  // faixa com o nome da opção
+  if(emo && word){
+    const fy = by - h/2 - size*.28;
+    const px=fitText(ctx,word,size*1.6,size*.2,"900"); ctx.font=`900 ${px}px Nunito, system-ui`;
+    const tw=ctx.measureText(word).width+size*.3;
+    ctx.fillStyle=c.c2; ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr; ctx.beginPath(); ctx.roundRect(cx-tw/2,fy-px*.8,tw,px*1.6,px*.8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(word,cx,fy);
+  }
+}
+function star(ctx,x,y,r){ ctx.beginPath(); for(let i=0;i<10;i++){ const a=i*Math.PI/5-Math.PI/2, rr=i%2?r*.45:r; ctx.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); }
+
+function drawTeams(ctx,cw,groundY,size,dpr){
+  ["L","R"].forEach((s,k)=>{
+    const names = cfg.players.map((p,i)=>G.st[i]?.side===s?p.name:null).filter(Boolean);
+    const txt = names.length ? names.join(" + ") : (G.phase==="pick"?"vem pra cá!":"");
+    if(!txt) return;
+    ctx.font=`900 ${Math.round(size*.17)}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.lineWidth=5*dpr; ctx.strokeStyle="rgba(27,20,48,.8)"; ctx.strokeText(txt,cw*(k?.75:.25),groundY+size*.12);
+    ctx.fillStyle="#fff"; ctx.fillText(txt,cw*(k?.75:.25),groundY+size*.12);
+  });
+}
+function drawPower(ctx,cw,ch,dpr){
+  if(G.phase!=="jump" && G.phase!=="result") return;
+  const tot={L:0,R:0}; G.st.forEach(s=>{ if(s.side) tot[s.side]+=s.jumps; });
+  const f = tot.L+tot.R ? tot.L/(tot.L+tot.R) : .5;
+  const w=cw*.5, h=36*dpr, x=(cw-w)/2, y=ch*.25;
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x,y,w,h,h/2); ctx.clip();
+  ctx.fillStyle="#2fb6ff"; ctx.fillRect(x,y,w,h); ctx.fillStyle="#ff4f8b"; ctx.fillRect(x,y,w*f,h);
+  ctx.restore(); ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr; ctx.beginPath(); ctx.roundRect(x,y,w,h,h/2); ctx.stroke();
+  ctx.fillStyle="#ffd23f"; ctx.beginPath(); ctx.arc(x+w*f,y+h/2,h*.7,0,7); ctx.fill(); ctx.stroke();
+  ctx.font=`400 ${h*.8}px Bungee, sans-serif`; ctx.textBaseline="middle"; ctx.fillStyle="#fff"; ctx.lineWidth=5*dpr; ctx.strokeStyle="#1b1430";
+  ctx.textAlign="right"; ctx.strokeText(tot.L,x-12*dpr,y+h/2); ctx.fillText(tot.L,x-12*dpr,y+h/2);
+  ctx.textAlign="left"; ctx.strokeText(tot.R,x+w+12*dpr,y+h/2); ctx.fillText(tot.R,x+w+12*dpr,y+h/2);
+}
+function drawPip(ctx,cw,ch,dpr,assigned,corner){
+  const vw=video.videoWidth, vh=video.videoHeight; if(!vw) return;
+  const w=Math.min(cw*(corner?.2:.24),(corner?340:440)*dpr), h=w*vh/vw, x=corner?16*dpr:(cw-w)/2, y=ch-h-84*dpr;
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x,y,w,h,16*dpr); ctx.clip();
+  ctx.translate(x+w,y); ctx.scale(-1,1); ctx.drawImage(video,0,0,w,h); ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle="rgba(255,79,139,.28)"; ctx.fillRect(x,y,w/2,h); ctx.fillStyle="rgba(47,182,255,.28)"; ctx.fillRect(x+w/2,y,w/2,h);
+  ctx.setLineDash([10*dpr,8*dpr]); ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.moveTo(x+w/2,y); ctx.lineTo(x+w/2,y+h); ctx.stroke(); ctx.setLineDash([]);
+  assigned.forEach((d,i)=>{ if(!d) return; const px=x+(1-d.b.x)*w, py=y+d.b.y*h;
+    ctx.fillStyle=PCOLORS[i]; ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.arc(px,py,9*dpr,0,7); ctx.fill(); ctx.stroke();
+    ctx.font=`900 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="bottom"; ctx.fillStyle="#fff"; ctx.fillText(cfg.players[i].name,px,py-12*dpr); });
+  ctx.restore();
+  ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr; ctx.beginPath(); ctx.roundRect(x,y,w,h,16*dpr); ctx.stroke();
+}
+function charState(s){ if(G.phase==="result"||G.phase==="end"){ if(!G.win) return "idle"; return G.win===s?"win":"lose"; } return "idle"; }
+
+// ---------- Calibração ----------
+let calib = null;
+function calibrate(i, btn){
+  if(!camOn){ btn.textContent="Ligue a câmera"; return; }
+  calib = { i, until: performance.now()+3000, btn };
+}
+
+// ---------- Jogo ----------
+const G = { phase:"idle", round:0, pairs:[], t0:0, dur:0, paused:false, pauseAt:0, st:[], scores:[], lastSpoken:-1, result:null };
+const parsePairs = () => cfg.pairs.split("\n").map(l=>l.split("|").map(s=>s.trim())).filter(a=>a.length>=2&&a[0]&&a[1]);
+
+function startGame(){
+  G.pairs = parsePairs(); if(!G.pairs.length) G.pairs = DEFAULT_PAIRS.split("\n").map(l=>l.split("|").map(s=>s.trim()));
+  G.scores = cfg.players.map(()=>0); G.round = -1;
+  $("#setup").classList.add("hidden"); $("#game").classList.remove("hidden"); $("#final").classList.add("hidden");
+  try{ document.documentElement.requestFullscreen?.(); }catch(e){}
+  nextRound();
+}
+function setPhase(p,dur){ G.phase=p; G.t0=performance.now(); G.dur=dur*1000; G.lastSpoken=-1; }
+function nextRound(){
+  G.round++;
+  if(G.round>=G.pairs.length) return endGame();
+  const [a,b] = G.pairs[G.round];
+  $("#optL").textContent=a; $("#optR").textContent=b;
+  $("#optL").classList.remove("win"); $("#optR").classList.remove("win");
+  G.st = cfg.players.map(()=>({side:null,jumps:0,base:null,up:false})); G.win = null;
+  setPhase("pick", cfg.tPick);
+  musicStart("pick");
+  say(`${clean(a)} ou ${clean(b)}? Escolham um lado!`);
+}
+const clean = s => s.replace(/[\p{Extended_Pictographic}️]/gu,"").trim();
+
+function tick(now, assigned, cw){
+  if(G.paused || G.phase==="idle" || G.phase==="end") return;
+  const left = Math.max(0, G.dur-(now-G.t0)); const secs = Math.ceil(left/1000);
+  if(G.phase==="pick"){
+    assigned.forEach((d,i)=>{ if(d){ const ns = d.b.x>.5?"L":"R"; if(G.st[i].side!==ns){ G.st[i].side=ns; hop(ns,.3); } } });
+    $("#phase").textContent="Escolham um lado!"; $("#count").textContent=secs;
+    if(secs<=3 && secs!==G.lastSpoken && secs>0){ G.lastSpoken=secs; beep(660,.12); }
+    if(left<=0){
+      const names = s => cfg.players.filter((p,i)=>G.st[i].side===s).map(p=>p.name);
+      $("#optL").innerHTML = esc(G.pairs[G.round][0])+`<small>${esc(names("L").join(" + ")||"ninguém")}</small>`;
+      $("#optR").innerHTML = esc(G.pairs[G.round][1])+`<small>${esc(names("R").join(" + ")||"ninguém")}</small>`;
+      setPhase("ready",3); say("Preparar…");
+    }
+  } else if(G.phase==="ready"){
+    $("#phase").textContent="Preparar…"; $("#count").textContent=secs;
+    if(secs!==G.lastSpoken && secs>0){ G.lastSpoken=secs; beep(520,.12); }
+    if(left<=0){ setPhase("jump", cfg.tJump); beep(990,.35); say("Pula!"); musicStart("jump"); }
+  } else if(G.phase==="jump"){
+    $("#phase").textContent="PULA! PULA! PULA!"; $("#count").textContent=secs;
+    assigned.forEach((d,i)=>{
+      const s=G.st[i]; if(!d || !s.side) return;
+      const y=d.b.y, th=d.b.sw*.32;
+      if(s.base===null) s.base=y;
+      if(!s.up){ s.base = s.base*.88 + y*.12; if(s.base-y > th){ s.up=true; } }
+      else if(s.base-y < th*.35){ s.up=false; s.jumps++; hop(s.side); beep(s.side==="L"?700:880,.05,.05); }
+    });
+    if(left<=0) finishRound();
+  } else if(G.phase==="result"){
+    if(left<=0) nextRound();
+  }
+}
+function finishRound(){
+  const tot = {L:0,R:0};
+  G.st.forEach(s=>{ if(s.side) tot[s.side]+=s.jumps; });
+  const win = tot.L===tot.R ? null : (tot.L>tot.R?"L":"R");
+  G.st.forEach((s,i)=>{ G.scores[i]+=s.jumps + (win && s.side===win ? cfg.bonus : 0); });
+  const [a,b]=G.pairs[G.round];
+  G.win = win;
+  $("#phase").textContent = win ? `${win==="L"?a:b} venceu!` : "Empate!";
+  $("#count").textContent = `${tot.L} × ${tot.R}`;
+  say(win ? `${clean(win==="L"?a:b)} venceu! ${tot.L} a ${tot.R}` : `Empate! ${tot.L} a ${tot.R}`);
+  musicStop(); if(win){ fanfare(); const cv=$("#stage"); popConfetti(win,cv.width,cv.height); } else beep(500,.4);
+  setPhase("result",5);
+  renderBoard();
+}
+function endGame(){
+  G.phase="end"; musicStop(); fanfare();
+  const cv=$("#stage"); popConfetti("L",cv.width,cv.height); popConfetti("R",cv.width,cv.height);
+  const order = cfg.players.map((p,i)=>({p,i,s:G.scores[i]})).sort((a,b)=>b.s-a.s);
+  $("#rank").innerHTML = order.map((o,k)=>`<li style="--c:${PCOLORS[o.i]}"><span>${k+1}º ${esc(o.p.name)}</span><b>${o.s}</b></li>`).join("");
+  $("#final").classList.remove("hidden");
+  say(`Fim de jogo! ${order[0].p.name} ganhou com ${order[0].s} pontos!`);
+}
+function renderBoard(){
+  $("#board").innerHTML = cfg.players.map((p,i)=>{
+    const j = G.phase==="jump"||G.phase==="result" ? `<span class="j">+${G.st[i]?.jumps||0}</span>` : "";
+    return `<div class="chip" style="--c:${PCOLORS[i]}"><span class="dot"></span>${esc(p.name)} <span class="pts">${G.scores[i]}</span>${j}</div>`;
+  }).join("");
+}
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+const begin = ()=> cfg.mode==="battle" ? startGame() : startVideoGame();
+$("#btnGo").onclick = ()=>{ unlockAudio(); if(cfg.mode!=="battle") loadYT(); if(!camOn){ startCam().then(()=>camOn&&begin()); } else begin(); };
+
+// ================= MODO VÍDEO =================
+cfg.mode = cfg.mode || "video";
+cfg.yt = cfg.yt || "https://youtu.be/maahbisMPrw";
+cfg.sideL = cfg.sideL || "6"; cfg.sideR = cfg.sideR || "7";
+function setMode(m){ cfg.mode=m; save(); document.body.classList.toggle("m-video",m!=="battle"); document.body.classList.toggle("m-battle",m==="battle");
+  $("#modeVideo").classList.toggle("on",m!=="battle"); $("#modeBattle").classList.toggle("on",m==="battle"); if(m!=="battle") loadYT(); }
+$("#modeVideo").onclick=()=>setMode("video"); $("#modeBattle").onclick=()=>setMode("battle");
+$("#ytUrl").value=cfg.yt; $("#ytUrl").oninput=e=>{ cfg.yt=e.target.value; save(); cueInfo(); };
+$("#sideL").value=cfg.sideL; $("#sideL").oninput=e=>{ cfg.sideL=e.target.value||"Esq."; save(); };
+$("#sideR").value=cfg.sideR; $("#sideR").oninput=e=>{ cfg.sideR=e.target.value||"Dir."; save(); };
+$("#fileWarn").hidden = location.protocol!=="file:";
+
+function ytId(u){ const m=String(u).match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([\w-]{11})/); return m?m[1]:(/^[\w-]{11}$/.test(String(u).trim())?String(u).trim():null); }
+let ytPromise=null;
+function loadYT(){ if(ytPromise) return ytPromise;
+  ytPromise=new Promise(res=>{ if(window.YT&&YT.Player) return res(YT); window.onYouTubeIframeAPIReady=()=>res(window.YT);
+    const s=document.createElement("script"); s.src="https://www.youtube.com/iframe_api"; document.head.append(s); });
+  return ytPromise; }
+
+const V = { player:null, id:null, cues:[], st:[], pts:[], pops:[], marking:false, lastT:0, flash:0, ended:false };
+const cueKey = ()=> "jb-cues-"+V.id;
+function getCues(id){ try{ return JSON.parse(localStorage.getItem("jb-cues-"+id)||"[]"); }catch(e){ return []; } }
+function saveCues(){ try{ localStorage.setItem(cueKey(), JSON.stringify(V.cues)); }catch(e){} }
+function cueInfo(){ const id=ytId(cfg.yt); const n=id?getCues(id).length:0;
+  $("#cueInfo").textContent = !id ? "Cole um link do YouTube válido." :
+    n ? `Este vídeo já tem ${n} tempos de pulo marcados: o app vai dar PERFEITO ou BOM pra cada pulo no tempo.` :
+    "Este vídeo ainda não tem tempos marcados. Na primeira vez, toque em “Marcar tempos” durante o vídeo e aperte ESPAÇO a cada vez que o vídeo mandar pular. Depois disso o app passa a pontuar o tempo certo."; }
+cueInfo(); setMode(cfg.mode);
+
+function vmsg(t){ const el=$("#vmsg"); if(!t){ el.classList.add("hidden"); return; } el.innerHTML=t; el.classList.remove("hidden"); }
+function resetVideoScores(){
+  V.st = cfg.players.map(()=>({side:null,base:null,up:false,upAt:0,jumps:0,good:0,perfect:0,used:new Set()}));
+  V.pts = cfg.players.map(()=>0); V.pops=[]; V.lastT=0; V.ended=false;
+  $("#vfinal").classList.add("hidden"); renderVHud();
+}
+async function startVideoGame(){
+  V.id = ytId(cfg.yt) || "maahbisMPrw"; V.cues = getCues(V.id);
+  $("#setup").classList.add("hidden"); $("#vgame").classList.remove("hidden");
+  resetVideoScores(); setMarking(false);
+  try{ document.documentElement.requestFullscreen?.(); }catch(e){}
+  if(location.protocol==="file:"){ ytError(153); return; }
+  vmsg("Carregando o vídeo…");
+  setTimeout(()=>{ if(!V.player) vmsg("Não consegui falar com o YouTube. Confira a internet e tente de novo."); },12000);
+  const YT = await loadYT();
+  if(!V.player){
+    V.player = new YT.Player("yt",{ videoId:V.id, width:"100%", height:"100%",
+      playerVars:{ autoplay:1, controls:0, rel:0, playsinline:1, modestbranding:1, iv_load_policy:3, ...(location.protocol.startsWith("http")?{origin:location.origin, widget_referrer:location.href}:{}) },
+      events:{ onReady:e=>{ vmsg(""); e.target.playVideo(); setTimeout(checkPlaying,2500); }, onStateChange:onYTState, onError:e=>ytError(e.data) } });
+  } else { V.player.loadVideoById(V.id); vmsg(""); setTimeout(checkPlaying,2500); }
+}
+function checkPlaying(){ if(V.player?.getPlayerState?.()!==1 && $("#vfinal").classList.contains("hidden"))
+  vmsg(`<p style="margin:0 0 14px">Toque para começar o vídeo</p><button class="go big" id="vPlayNow">▶ Tocar</button>`), $("#vPlayNow").onclick=()=>{ vmsg(""); V.player.playVideo(); }; }
+function onYTState(e){
+  $("#vPause").textContent = e.data===1 ? "Pausar" : "Continuar";
+  if(e.data===1) vmsg("");
+  if(e.data===0 && !V.ended) endVideoGame();
+}
+function ytError(code){
+  const why = (code===101||code===150) ? "O dono deste vídeo não deixa ele tocar fora do YouTube. Tente outro vídeo." :
+    (code===153||location.protocol==="file:") ? "O YouTube não tocou porque o jogo foi aberto direto pelo arquivo. Feche e abra pelo atalho “Jump Battle” da Área de Trabalho." :
+    "Não consegui carregar este vídeo. Confira o link e a internet.";
+  vmsg(why+`<div class="row" style="justify-content:center;margin-top:14px"><button class="cam big" id="vErrBack">Voltar</button></div>`);
+  $("#vErrBack").onclick = ()=>$("#vQuit").click();
+}
+function setMarking(on){ V.marking=on; $("#markbar").classList.toggle("hidden",!on); $("#vMark").classList.toggle("on",on); $("#vMark").textContent = on?"Parar de marcar":"Marcar tempos"; $("#markN").textContent=V.cues.length; }
+function markCue(){ if(!V.marking||!V.player) return; const t=V.player.getCurrentTime()-0.12;
+  V.cues.push(+t.toFixed(2)); V.cues.sort((a,b)=>a-b); saveCues(); $("#markN").textContent=V.cues.length; V.flash=1; beep(1000,.05,.08); }
+$("#markbar").onclick = markCue;
+addEventListener("keydown", e=>{ if($("#vgame").classList.contains("hidden")) return;
+  if(e.code==="Space"){ e.preventDefault(); if(V.marking) markCue(); else togglePause(); } });
+function togglePause(){ if(!V.player) return; V.player.getPlayerState()===1 ? V.player.pauseVideo() : V.player.playVideo(); }
+$("#vPause").onclick = togglePause;
+$("#vMark").onclick = ()=>{ if(!V.marking && V.cues.length){ /* continua acrescentando */ } setMarking(!V.marking); if(V.marking){ V.player?.seekTo(0,true); V.player?.playVideo(); resetVideoScores(); } };
+$("#vClear").onclick = ()=>{ if($("#vClear").dataset.sure){ V.cues=[]; saveCues(); setMarking(V.marking); delete $("#vClear").dataset.sure; $("#vClear").textContent="Apagar tempos"; cueInfo(); }
+  else { $("#vClear").dataset.sure="1"; $("#vClear").textContent="Toque de novo pra apagar"; setTimeout(()=>{ delete $("#vClear").dataset.sure; $("#vClear").textContent="Apagar tempos"; },3000); } };
+$("#vRestart").onclick = $("#vAgain").onclick = ()=>{ resetVideoScores(); V.player?.seekTo(0,true); V.player?.playVideo(); };
+$("#vQuit").onclick = $("#vBack").onclick = ()=>{ try{ V.player?.pauseVideo(); }catch(e){} setMarking(false); vmsg(""); $("#vgame").classList.add("hidden"); $("#setup").classList.remove("hidden"); renderPlayers(); cueInfo(); try{document.exitFullscreen?.()}catch(e){} };
+
+function videoTick(now, assigned){
+  if(!V.player?.getCurrentTime) return;
+  const t=V.player.getCurrentTime(), playing=V.player.getPlayerState()===1;
+  if(t < V.lastT-1){ V.st.forEach(s=>s.used.clear()); }
+  assigned.forEach((d,i)=>{ const s=V.st[i]; if(!d||!s) return;
+    s.side = d.b.x>.5?"L":"R";
+    if(!playing){ s.base=null; s.up=false; return; }
+    const y=d.b.y, th=d.b.sw*.32;
+    if(s.base===null) s.base=y;
+    if(!s.up){ s.base=s.base*.88+y*.12; if(s.base-y>th){ s.up=true; s.upAt=t-0.1; } }
+    else if(s.base-y<th*.35){ s.up=false; s.jumps++; scoreJump(i,s.upAt); }
+  });
+  if(playing && V.cues.some(c=>c>V.lastT && c<=t)) V.flash=1;
+  V.lastT=t;
+  if(Math.floor(now/250)!==V._hud){ V._hud=Math.floor(now/250); renderVHud(); }
+}
+function scoreJump(i,tj){
+  const s=V.st[i]; let add, txt, col;
+  if(V.marking || !V.cues.length){ add=1; txt="+1"; col="#ffffff"; }
+  else {
+    let best=-1, bd=9; V.cues.forEach((c,k)=>{ if(s.used.has(k)) return; const d=Math.abs(c-tj); if(d<bd){ bd=d; best=k; } });
+    if(bd<=.22){ add=3; txt="PERFEITO! +3"; col="#ffd23f"; s.perfect++; s.used.add(best); }
+    else if(bd<=.5){ add=1; txt="BOM! +1"; col="#7be36a"; s.good++; s.used.add(best); }
+    else { add=0; txt="fora do tempo"; col="#ff9a9a"; }
+  }
+  V.pts[i]+=add; V.pops.push({i,txt,col,life:70});
+  beep(add>=3?1250:add?880:260,.06,.06); renderVHud();
+}
+function renderVHud(){
+  $("#vhud").innerHTML = cfg.players.map((p,i)=>{ const s=V.st[i]||{};
+    const tag = s.side ? `<span class="tag">${esc(s.side==="L"?cfg.sideL:cfg.sideR)}</span>` : "";
+    const stars = V.cues.length && !V.marking ? `<span class="stars">⭐${s.perfect||0} ✓${s.good||0}</span>` : `<span class="stars">${s.jumps||0} pulos</span>`;
+    return `<div class="chip" style="--c:${PCOLORS[i]}"><span class="dot"></span>${esc(p.name)} <span class="pts">${V.pts[i]||0}</span>${stars}${tag}</div>`; }).join("");
+  const tot={L:0,R:0}; V.st.forEach(s=>{ if(s.side) tot[s.side]+=s.jumps; });
+  $("#vsides").innerHTML = `<span style="background:var(--left)">${esc(cfg.sideL)}: ${tot.L}</span><span style="background:var(--right)">${esc(cfg.sideR)}: ${tot.R}</span>`;
+}
+function videoDraw(assigned){
+  const cv=$("#vcanvas"), ctx=cv.getContext("2d"), dpr=Math.min(2,devicePixelRatio||1);
+  const cw=cv.clientWidth*dpr, ch=cv.clientHeight*dpr;
+  if(cv.width!==cw||cv.height!==ch){ cv.width=cw; cv.height=ch; }
+  ctx.clearRect(0,0,cw,ch);
+  if(V.flash>.03){ ctx.strokeStyle=`rgba(255,210,63,${V.flash})`; ctx.lineWidth=24*dpr; ctx.strokeRect(0,0,cw,ch); V.flash*=.86; }
+  drawPip(ctx,cw,ch,dpr,assigned,true);
+  const chips=[...document.querySelectorAll("#vhud .chip")];
+  for(let k=V.pops.length-1;k>=0;k--){ const p=V.pops[k], el=chips[p.i]; p.life--;
+    if(el){ const r=el.getBoundingClientRect(), x=(r.left+r.width/2)*dpr, y=(r.top-10)*dpr-(70-p.life)*1.6*dpr;
+      ctx.globalAlpha=Math.min(1,p.life/20); ctx.font=`400 ${30*dpr}px Bungee, sans-serif`; ctx.textAlign="center"; ctx.textBaseline="bottom";
+      ctx.lineWidth=6*dpr; ctx.strokeStyle="#1b1430"; ctx.strokeText(p.txt,x,y); ctx.fillStyle=p.col; ctx.fillText(p.txt,x,y); ctx.globalAlpha=1; }
+    if(p.life<=0) V.pops.splice(k,1); }
+  drawConfetti(ctx,ch,dpr);
+}
+function endVideoGame(){
+  V.ended=true; setMarking(false); cueInfo();
+  const order = cfg.players.map((p,i)=>({p,i,s:V.pts[i],st:V.st[i]})).sort((a,b)=>b.s-a.s);
+  $("#vrank").innerHTML = order.map((o,k)=>`<li style="--c:${PCOLORS[o.i]}"><span>${k+1}º ${esc(o.p.name)}</span><span style="font-size:.75em;opacity:.85">${V.cues.length?`⭐${o.st.perfect} ✓${o.st.good} · `:""}${o.st.jumps} pulos</span><b>${o.s}</b></li>`).join("");
+  $("#vfinal").classList.remove("hidden");
+  fanfare(); const cv=$("#vcanvas"); popConfetti("L",cv.width,cv.height); popConfetti("R",cv.width,cv.height);
+  say(`Fim! ${order[0].p.name} ganhou com ${order[0].s} pontos!`);
+}
+$("#btnAgain").onclick = startGame;
+$("#btnBack").onclick = $("#btnQuit").onclick = ()=>{ G.phase="idle"; musicStop(); $("#game").classList.add("hidden"); $("#setup").classList.remove("hidden"); renderPlayers(); try{document.exitFullscreen?.()}catch(e){} };
+$("#btnSkip").onclick = ()=>{ if(G.phase!=="end"){ G.paused=false; $("#btnPause").textContent="Pausar"; nextRound(); } };
+$("#btnPause").onclick = ()=>{
+  if(!G.paused){ G.paused=true; G.pauseAt=performance.now(); $("#btnPause").textContent="Continuar"; $("#phase").textContent="Pausado"; musicStop(); }
+  else { G.paused=false; G.t0 += performance.now()-G.pauseAt; $("#btnPause").textContent="Pausar"; if(G.phase==="pick"||G.phase==="ready"||G.phase==="jump") musicStart(G.phase==="jump"?"jump":"pick"); }
+};
+const musLabel = ()=>{ $("#btnMusic").textContent = mus.on ? "Música: sim" : "Música: não"; };
+$("#btnMusic").onclick = ()=>{ mus.on=!mus.on; try{ localStorage.setItem("jb-music", mus.on?"on":"off"); }catch(e){}
+  if(!mus.on) musicStop(); else if(["pick","ready","jump"].includes(G.phase)) musicStart(G.phase==="jump"?"jump":"pick"); musLabel(); };
+setTimeout(musLabel,0);
+
+// ---------- Loop ----------
+function loop(now){
+  requestAnimationFrame(loop);
+  if(!camOn || video.readyState<2) return;
+  if(video.currentTime!==lastTs){
+    lastTs = video.currentTime;
+    const W = 320, H = Math.round(320*video.videoHeight/video.videoWidth);
+    if(samp.width!==W){ samp.width=W; samp.height=H; }
+    sctx.drawImage(video,0,0,W,H);
+    try{ poses = landmarker.detectForVideo(video, now).landmarks || []; }catch(e){ poses=[]; }
+  }
+  const assigned = assign();
+
+  // calibração
+  if(calib){
+    const left = calib.until-now;
+    calib.btn.textContent = left>0 ? `Fique parada… ${Math.ceil(left/1000)}` : "…";
+    if(left<=0){
+      const i=calib.i, btn=calib.btn; calib=null;
+      if(poses.length!==1){ btn.textContent = poses.length? "Só 1 pessoa na frente!" : "Ninguém na câmera"; setTimeout(renderPlayers,1800); }
+      else { const c=torsoColor(poses[0]); if(c){ cfg.players[i].color=c; save(); beep(990,.2); } renderPlayers(); }
+    }
+  }
+
+  if(!$("#setup").classList.contains("hidden")){
+    drawFrame($("#prev"), (ctx,cw,ch,map,dpr)=>drawPlayers(ctx,cw,ch,map,dpr,assigned,false));
+  } else if(!$("#vgame").classList.contains("hidden")){
+    videoTick(now, assigned);
+    videoDraw(assigned);
+  } else {
+    const cv=$("#stage"), ctx=cv.getContext("2d"), dpr=Math.min(2,devicePixelRatio||1);
+    const cw=cv.clientWidth*dpr, ch=cv.clientHeight*dpr;
+    if(cv.width!==cw||cv.height!==ch){ cv.width=cw; cv.height=ch; }
+    const gy = drawScene(ctx,cw,ch,dpr,now);
+    const size = Math.min(cw*.2, ch*.24);
+    const pair = G.pairs[G.round] || ["",""];
+    drawChar(ctx,"L",cw*.25,gy,size,pair[0],now,dpr,charState("L"));
+    drawChar(ctx,"R",cw*.75,gy,size,pair[1],now,dpr,charState("R"));
+    drawTeams(ctx,cw,gy,size,dpr);
+    drawPower(ctx,cw,ch,dpr);
+    drawPip(ctx,cw,ch,dpr,assigned);
+    drawConfetti(ctx,ch,dpr);
+    tick(now, assigned);
+    if(G.phase==="jump"||G.phase==="pick") renderBoard();
+  }
+}
+
+// ---------- Som e voz ----------
+let actx=null;
+function unlockAudio(){ try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume(); speechSynthesis.speak(new SpeechSynthesisUtterance("")); }catch(e){} }
+function beep(f,d,v=.15){ if(!actx) return; const o=actx.createOscillator(), g=actx.createGain(); o.type="square"; o.frequency.value=f; g.gain.value=v;
+  o.connect(g).connect(actx.destination); const t=actx.currentTime; g.gain.exponentialRampToValueAtTime(.001,t+d); o.start(t); o.stop(t+d); }
+// trilha estilo videogame, gerada ao vivo (sem arquivo)
+const mus = { timer:null, step:0, mode:null, on:true, next:0, noise:null };
+try{ mus.on = localStorage.getItem("jb-music")!=="off"; }catch(e){}
+const N = m => 440*Math.pow(2,(m-69)/12);
+function tone(f,t,d,type,v){ const o=actx.createOscillator(), g=actx.createGain(); o.type=type; o.frequency.setValueAtTime(f,t);
+  g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(.0008,t+d); o.connect(g).connect(actx.destination); o.start(t); o.stop(t+d+.02); }
+function kick(t){ const o=actx.createOscillator(), g=actx.createGain(); o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(40,t+.12);
+  g.gain.setValueAtTime(.5,t); g.gain.exponentialRampToValueAtTime(.001,t+.18); o.connect(g).connect(actx.destination); o.start(t); o.stop(t+.2); }
+function noiseHit(t,d,v,hp){ if(!mus.noise){ const b=actx.createBuffer(1,actx.sampleRate*.3,actx.sampleRate); const a=b.getChannelData(0); for(let i=0;i<a.length;i++) a[i]=Math.random()*2-1; mus.noise=b; }
+  const s=actx.createBufferSource(), f=actx.createBiquadFilter(), g=actx.createGain(); s.buffer=mus.noise; f.type="highpass"; f.frequency.value=hp;
+  g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(.001,t+d); s.connect(f).connect(g).connect(actx.destination); s.start(t); s.stop(t+d); }
+const PROG = [[57,60,64],[53,57,60],[48,52,55],[55,59,62]]; // Lá menor, Fá, Dó, Sol
+const MEL  = [76,null,74,72,74,null,76,79, 77,null,76,74,72,null,74,76];
+function playStep(s,t,sp){
+  const jump = mus.mode==="jump", st=s%16, ch=PROG[Math.floor(s/16)%4];
+  if(st%4===0) kick(t);
+  if(jump && st%8===4) noiseHit(t,.14,.25,1200);
+  if(jump) noiseHit(t,.03,st%2?.05:.08,7000);
+  if(st%2===0) tone(N(ch[0]-24),t,sp*1.8,"triangle",.22);
+  if(jump || st%2===0) tone(N(ch[[0,1,2,1][st%4]]+12),t,sp*.8,"square",.035);
+  if(jump && MEL[st]) tone(N(MEL[st]+(Math.floor(s/16)%4===3?2:0)),t,sp*1.6,"square",.05);
+}
+function musicStart(mode){
+  mus.mode = mode; if(!actx || !mus.on || mus.timer) return;
+  mus.next = actx.currentTime+.05; mus.step = 0;
+  mus.timer = setInterval(()=>{ const sp = 60/(mus.mode==="jump"?168:116)/4;
+    while(mus.next < actx.currentTime+.15){ playStep(mus.step,mus.next,sp); mus.next+=sp; mus.step++; } }, 25);
+}
+function musicStop(){ clearInterval(mus.timer); mus.timer=null; }
+function fanfare(){ if(!actx) return; const t=actx.currentTime+.05; [72,76,79,84].forEach((m,i)=>tone(N(m),t+i*.12,i===3?.6:.14,"square",.08)); }
+
+// confete
+const confetti = [];
+function popConfetti(side,cw,ch){ const x0 = side==="L"?cw*.25:cw*.75; const cols=["#ff4f8b","#2fb6ff","#ffd23f","#7be36a","#fff8ec"];
+  for(let i=0;i<140;i++) confetti.push({x:x0,y:ch*.35,vx:(Math.random()-.5)*cw*.012,vy:-Math.random()*ch*.02-ch*.004,r:Math.random()*6+4,c:cols[i%5],a:Math.random()*6,life:120}); }
+function drawConfetti(ctx,ch,dpr){ for(let i=confetti.length-1;i>=0;i--){ const p=confetti[i]; p.vy+=ch*.0006; p.x+=p.vx; p.y+=p.vy; p.a+=.2; p.life--;
+  ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a); ctx.fillStyle=p.c; ctx.fillRect(-p.r*dpr/2,-p.r*dpr,p.r*dpr,p.r*dpr*2); ctx.restore();
+  if(p.life<=0||p.y>ch) confetti.splice(i,1); } }
+
+function say(t){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(t); u.lang="pt-BR"; u.rate=1.05; speechSynthesis.speak(u); }catch(e){} }
+</script>
+</body>
+</html>
