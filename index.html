@@ -191,6 +191,7 @@ body.m-video .battle-only, body.m-battle .video-only, body.m-battle #videoOpts{d
   <div id="vhud"></div>
   <div id="vfinal" class="hidden"><div class="box">
     <h2>Fim do vídeo!</h2>
+    <div id="vwinner" style="font-family:var(--display);font-size:clamp(26px,5vw,52px)"></div>
     <ol id="vrank"></ol>
     <div class="row"><button class="go big" id="vAgain">Jogar de novo</button><button class="cam big" id="vBack">Ajustes</button></div>
   </div></div>
@@ -637,7 +638,7 @@ cueInfo(); setMode(cfg.mode);
 function vmsg(t){ const el=$("#vmsg"); if(!t){ el.classList.add("hidden"); return; } el.innerHTML=t; el.classList.remove("hidden"); }
 function resetVideoScores(){
   V.st = cfg.players.map(()=>({side:null,base:null,up:false,upAt:0,jumps:0,good:0,perfect:0,used:new Set()}));
-  V.pts = cfg.players.map(()=>0); V.pops=[]; V.lastT=0; V.ended=false;
+  V.pts = cfg.players.map(()=>0); V.side={L:0,R:0}; V.pops=[]; V.lastT=0; V.ended=false;
   $("#vfinal").classList.add("hidden"); renderVHud();
 }
 async function startVideoGame(){
@@ -708,7 +709,7 @@ function scoreJump(i,tj){
     else if(bd<=.5){ add=1; txt="BOM! +1"; col="#7be36a"; s.good++; s.used.add(best); }
     else { add=0; txt="fora do tempo"; col="#ff9a9a"; }
   }
-  V.pts[i]+=add; V.pops.push({i,txt,col,life:70});
+  V.pts[i]+=add; if(s.side) V.side[s.side]+=add; V.pops.push({i,txt,col,life:70});
   beep(add>=3?1250:add?880:260,.06,.06); renderVHud();
 }
 function renderVHud(){
@@ -716,7 +717,7 @@ function renderVHud(){
     const tag = s.side ? `<span class="tag">${esc(s.side==="L"?cfg.sideL:cfg.sideR)}</span>` : "";
     const stars = V.cues.length && !V.marking ? `<span class="stars">⭐${s.perfect||0} ✓${s.good||0}</span>` : `<span class="stars">${s.jumps||0} pulos</span>`;
     return `<div class="chip" style="--c:${PCOLORS[i]}"><span class="dot"></span>${esc(p.name)} <span class="pts">${V.pts[i]||0}</span>${stars}${tag}</div>`; }).join("");
-  const tot={L:0,R:0}; V.st.forEach(s=>{ if(s.side) tot[s.side]+=s.jumps; });
+  const tot=V.side||{L:0,R:0};
   $("#vsides").innerHTML = `<span style="background:var(--left)">${esc(cfg.sideL)}: ${tot.L}</span><span style="background:var(--right)">${esc(cfg.sideR)}: ${tot.R}</span>`;
 }
 function videoDraw(assigned){
@@ -738,9 +739,12 @@ function endVideoGame(){
   V.ended=true; setMarking(false); cueInfo();
   const order = cfg.players.map((p,i)=>({p,i,s:V.pts[i],st:V.st[i]})).sort((a,b)=>b.s-a.s);
   $("#vrank").innerHTML = order.map((o,k)=>`<li style="--c:${PCOLORS[o.i]}"><span>${k+1}º ${esc(o.p.name)}</span><span style="font-size:.75em;opacity:.85">${V.cues.length?`⭐${o.st.perfect} ✓${o.st.good} · `:""}${o.st.jumps} pulos</span><b>${o.s}</b></li>`).join("");
+  const L=V.side.L, R=V.side.R;
+  $("#vwinner").innerHTML = L===R ? `Empate! ${L} × ${R}` :
+    `<span style="color:${L>R?"var(--left)":"var(--right)"}">Time ${esc(L>R?cfg.sideL:cfg.sideR)} venceu!</span><br><span style="font-size:.6em">${esc(cfg.sideL)} ${L} × ${R} ${esc(cfg.sideR)}</span>`;
   $("#vfinal").classList.remove("hidden");
   fanfare(); const cv=$("#vcanvas"); popConfetti("L",cv.width,cv.height); popConfetti("R",cv.width,cv.height);
-  say(`Fim! ${order[0].p.name} ganhou com ${order[0].s} pontos!`);
+  say((L===R?'Empate! ':`Time ${clean(L>R?cfg.sideL:cfg.sideR)} venceu! `)+`${order[0].p.name} fez mais pontos, ${order[0].s}!`);
 }
 $("#btnAgain").onclick = startGame;
 $("#btnBack").onclick = $("#btnQuit").onclick = ()=>{ G.phase="idle"; musicStop(); $("#game").classList.add("hidden"); $("#setup").classList.remove("hidden"); renderPlayers(); try{document.exitFullscreen?.()}catch(e){} };
