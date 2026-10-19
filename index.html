@@ -149,7 +149,7 @@ body.m-video .battle-only, body.m-battle .video-only, body.m-battle #videoOpts{d
           <option value="baixa">Baixa (só pulos bem altos)</option><option value="media">Média</option><option value="alta">Alta (pulinhos contam)</option>
         </select></label></div>
       <label style="display:flex;gap:10px;align-items:center;font-weight:800"><input type="checkbox" id="flip" style="width:24px;height:24px"> Inverter lados (marque se a pessoa aparece no lado errado)</label>
-      <p class="hint">Na prévia acima aparece o esqueleto de cada uma. Só conta pulo quando estiver escrito “corpo inteiro ✓”: a câmera precisa ver dos pés à cabeça.</p>
+      <p class="hint"><b>Teste antes de jogar:</b> na prévia aparece o esqueleto de cada uma, uma barrinha e o número de pulos. Pulem algumas vezes: a barrinha precisa passar da linha branca e ficar verde, e o número tem que subir 1 a cada pulo. Se não subir, use sensibilidade Alta; se contar parado, use Baixa. Os pés precisam aparecer na câmera.</p>
       <button class="btn-add" id="btnAdd">+ jogadora</button>
     </div>
 
@@ -306,7 +306,7 @@ function body(lm){
   const sx=(ls.x+rs.x)/2, sy=(ls.y+rs.y)/2, hx=(lh.x+rh.x)/2, hipY=(lh.y+rh.y)/2;
   const sw=Math.hypot(ls.x-rs.x, ls.y-rs.y) || .1;
   const ay=(la.y+ra.y)/2, H=Math.max(.05, ay-sy);
-  const full = [11,12,23,24,25,26,27,28].every(k=>vis(lm[k])>VIS) && la.y<.985 && ra.y<.985 && lm[0].y>0.01;
+  const full = [11,12,23,24].every(k=>vis(lm[k])>.5) && vis(la)>.4 && vis(ra)>.4 && la.y<.995 && ra.y<.995;
   const fx = (vis(la)>VIS && vis(ra)>VIS) ? (la.x+ra.x)/2 : hx;
   return { x:(sx+hx)/2, fx, y:sy, sw, hy:hipY, hipY, kneeY:(lk.y+rk.y)/2, ay, lAnk:la.y, rAnk:ra.y, H, full, hw:Math.abs(lh.x-rh.x)||sw*.6 };
 }
@@ -363,32 +363,43 @@ function sideOf(i, d){
   SIDE[i] = ns; return ns;
 }
 // detector de pulo: os dois tornozelos e o quadril sobem juntos e depois descem
-const SENS = {baixa:.10, media:.075, alta:.055};
+const SENS = {baixa:.09, media:.06, alta:.04};
 const J = [];
+let detFps = 0, _fpsN = 0, _fpsT = 0;
+function pct(arr,q){ const v=arr.slice().sort((x,y)=>x-y); return v[Math.min(v.length-1,Math.floor(q*(v.length-1)))]; }
 function detect(assigned, tp){
   const ev=[];
+  _fpsN++; if(tp-_fpsT>=1){ detFps=_fpsN/(tp-_fpsT); _fpsN=0; _fpsT=tp; }
   assigned.forEach((d,i)=>{
-    const s = J[i] || (J[i]={base:null,up:false,last:0,sm:null,H:0,full:false});
+    const s = J[i] || (J[i]={hist:[],up:false,last:0,sm:null,H:0,full:false,rise:0,gT:0,count:0});
     s.full = !!(d && d.b.full);
-    if(!s.full){ s.base=null; s.up=false; s.sm=null; return; }
-    const b=d.b, a=.55, cur={hy:b.hipY, l:b.lAnk, r:b.rAnk};
-    s.sm = s.sm ? {hy:s.sm.hy+(cur.hy-s.sm.hy)*a, l:s.sm.l+(cur.l-s.sm.l)*a, r:s.sm.r+(cur.r-s.sm.r)*a} : cur;
-    s.H = s.H ? s.H*.97+b.H*.03 : b.H;
+    if(!s.full){ s.hist=[]; s.up=false; s.sm=null; s.rise=0; return; }
+    const b=d.b, dt=Math.min(.2,Math.max(.01,tp-(s.lt||tp-.033))), a=1-Math.exp(-dt/.03), cur={ay:b.ay, hy:b.hipY}; s.lt=tp;
+    s.sm = s.sm ? {ay:s.sm.ay+(cur.ay-s.sm.ay)*a, hy:s.sm.hy+(cur.hy-s.sm.hy)*a} : cur;
+    s.H = s.H ? s.H*.92+b.H*.08 : b.H;
     const m=s.sm;
-    if(!s.base){ s.base={...m}; return; }
-    const thr = s.H*(SENS[cfg.sens]||.075);
-    const uh=s.base.hy-m.hy, ul=s.base.l-m.l, ur=s.base.r-m.r;
+    s.hist.push([tp,m.ay,m.hy]); while(s.hist.length && tp-s.hist[0][0]>1.5) s.hist.shift();
+    if(s.hist.length<5 || tp-s.hist[0][0]<.4){ s.gT=tp; return; }
+    const gA=pct(s.hist.map(h=>h[1]),.85), gH=pct(s.hist.map(h=>h[2]),.85);   // chão = pés mais baixos
+    const thr=s.H*(SENS[cfg.sens]||.06);
+    const rise=gA-m.ay, hrise=gH-m.hy;
+    s.rise=rise/thr;
     if(!s.up){
-      const k = (uh<thr*.35 && ul<thr*.35 && ur<thr*.35) ? .15 : .04;
-      if(!(ul>thr && ur>thr)) for(const key of ["hy","l","r"]) s.base[key]+=(m[key]-s.base[key])*k;
-      if(ul>thr && ur>thr && uh>thr*.6 && Math.abs(ul-ur)<thr*1.2 && tp-s.last>.2){ s.up=true; s.upAt=tp; }
+      if(rise<thr*.3) s.gT=tp;
+      if(rise>thr && hrise>thr*.45 && tp-s.gT<.45 && tp-s.last>.16){ s.up=true; s.upAt=tp; }
     } else {
-      const air=tp-s.upAt;
-      if(ul<thr*.35 && ur<thr*.35){ s.up=false; s.last=tp; if(air>.08 && air<1.1) ev.push({i,up:s.upAt}); }
-      else if(air>1.3){ s.up=false; s.base=null; }
+      if(rise<thr*.5){ s.up=false; s.last=tp; s.gT=tp; const air=tp-s.upAt; if(air>.04 && air<1.2){ s.count++; ev.push({i,up:s.upAt}); } }
+      else if(tp-s.upAt>1.5){ s.up=false; s.hist=[]; }
     }
   });
   return ev;
+}
+// barrinha de altura do pulo (diagnóstico)
+function riseBar(ctx,x,y,h,dpr,st,color){
+  const w=12*dpr, f=Math.max(0,Math.min(1,(st?.rise||0)/2));
+  ctx.fillStyle="rgba(27,20,48,.75)"; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle = st?.up ? "#7be36a" : color; ctx.fillRect(x,y+h*(1-f),w,h*f);
+  ctx.fillStyle="#fff"; ctx.fillRect(x-3*dpr,y+h/2-1*dpr,w+6*dpr,2*dpr); // linha = altura mínima
 }
 function drawSkeleton(ctx, lm, map, color, lw){
   ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.lineCap="round";
@@ -426,6 +437,10 @@ function drawPlayers(ctx,cw,ch,map,dpr,assigned,showDivider){
     if(!d) return; const [px,py]=map(d.b.x,d.b.y); const c=PCOLORS[i];
     drawSkeleton(ctx,d.lm,map,c,6*dpr);
     ctx.font=`900 ${18*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="top";
+    riseBar(ctx,px+70*dpr,py-60*dpr,120*dpr,dpr,J[i],c);
+    ctx.font=`400 ${30*dpr}px Bungee, sans-serif`; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.lineWidth=5*dpr; ctx.strokeStyle="rgba(27,20,48,.9)";
+    const ct=`${J[i]?.count||0} pulos`; ctx.strokeText(ct,px+92*dpr,py); ctx.fillStyle="#ffd23f"; ctx.fillText(ct,px+92*dpr,py);
+    ctx.textAlign="center"; ctx.textBaseline="top";
     const sd = sideOf(i,d), sn = sideNames()[sd];
     const okTxt = (d.b.full ? "corpo inteiro ✓" : "mostre o corpo todo, dos pés à cabeça") + "  ·  lado " + sn;
     ctx.lineWidth=5*dpr; ctx.strokeStyle="rgba(27,20,48,.9)"; ctx.strokeText(okTxt,px,py+60*dpr); ctx.fillStyle=d.b.full?"#7be36a":"#ff9a9a"; ctx.fillText(okTxt,px,py+60*dpr);
@@ -582,7 +597,7 @@ function drawPip(ctx,cw,ch,dpr,assigned,corner){
   const pmap=(lx,ly)=>[x+(1-lx)*w, y+ly*h];
   assigned.forEach((d,i)=>{ if(!d) return; drawSkeleton(ctx,d.lm,pmap,d.b.full?PCOLORS[i]:"#ff6b6b",3*dpr); const px=x+(1-d.b.fx)*w, py=y+d.b.y*h;
     ctx.fillStyle=PCOLORS[i]; ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.arc(px,py,9*dpr,0,7); ctx.fill(); ctx.stroke();
-    ctx.font=`900 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="bottom"; ctx.fillStyle="#fff"; ctx.fillText(cfg.players[i].name+(d.b.full?"":" (pés!)"),px,py-12*dpr); });
+    ctx.font=`900 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="bottom"; ctx.fillStyle="#fff"; ctx.fillText(cfg.players[i].name+(d.b.full?"":" (pés!)"),px,py-12*dpr); riseBar(ctx,px+14*dpr,py,40*dpr,dpr,J[i],PCOLORS[i]); });
   ctx.restore();
   ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr; ctx.beginPath(); ctx.roundRect(x,y,w,h,16*dpr); ctx.stroke();
 }
@@ -851,7 +866,7 @@ function loop(now){
   }
 
   if(!$("#setup").classList.contains("hidden")){
-    drawFrame($("#prev"), (ctx,cw,ch,map,dpr)=>{ drawPlayers(ctx,cw,ch,map,dpr,assigned,true); sideLabels(ctx,cw,ch,dpr); });
+    drawFrame($("#prev"), (ctx,cw,ch,map,dpr)=>{ drawPlayers(ctx,cw,ch,map,dpr,assigned,true); sideLabels(ctx,cw,ch,dpr); ctx.font=`800 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="right"; ctx.textBaseline="bottom"; ctx.fillStyle=detFps<12?"#ff9a9a":"#fff"; ctx.fillText(`${detFps.toFixed(0)} quadros/s`,cw-10*dpr,ch-8*dpr); });
   } else if(!$("#vgame").classList.contains("hidden")){
     videoTick(now, assigned, jev);
     videoDraw(assigned);
