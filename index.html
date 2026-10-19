@@ -148,6 +148,7 @@ body.m-video .battle-only, body.m-battle .video-only, body.m-battle #videoOpts{d
         <select id="sens" style="background:rgba(0,0,0,.35);color:var(--paper);border:2px solid rgba(255,248,236,.2);border-radius:12px;padding:10px 12px;font:inherit;font-size:18px;font-weight:800">
           <option value="baixa">Baixa (só pulos bem altos)</option><option value="media">Média</option><option value="alta">Alta (pulinhos contam)</option>
         </select></label></div>
+      <label style="display:flex;gap:10px;align-items:center;font-weight:800"><input type="checkbox" id="flip" style="width:24px;height:24px"> Inverter lados (marque se a pessoa aparece no lado errado)</label>
       <p class="hint">Na prévia acima aparece o esqueleto de cada uma. Só conta pulo quando estiver escrito “corpo inteiro ✓”: a câmera precisa ver dos pés à cabeça.</p>
       <button class="btn-add" id="btnAdd">+ jogadora</button>
     </div>
@@ -261,6 +262,7 @@ function renderPlayers(){
 }
 $("#btnAdd").onclick = ()=>{ cfg.players.push({name:"Jogadora "+(cfg.players.length+1),color:null}); save(); renderPlayers(); };
 $("#pairs").value = cfg.pairs; $("#pairs").oninput = e=>{ cfg.pairs = e.target.value; save(); };
+$("#flip").checked=!!cfg.flip; $("#flip").onchange=e=>{ cfg.flip=e.target.checked; save(); };
 cfg.sens = cfg.sens || "media"; $("#sens").value=cfg.sens; $("#sens").onchange=e=>{ cfg.sens=e.target.value; save(); };
 for(const k of ["tPick","tJump","bonus"]){ $("#"+k).value = cfg[k]; $("#"+k).oninput = e=>{ cfg[k] = +e.target.value||cfg[k]; save(); }; }
 renderPlayers();
@@ -305,7 +307,8 @@ function body(lm){
   const sw=Math.hypot(ls.x-rs.x, ls.y-rs.y) || .1;
   const ay=(la.y+ra.y)/2, H=Math.max(.05, ay-sy);
   const full = [11,12,23,24,25,26,27,28].every(k=>vis(lm[k])>VIS) && la.y<.985 && ra.y<.985 && lm[0].y>0.01;
-  return { x:(sx+hx)/2, y:sy, sw, hy:hipY, hipY, kneeY:(lk.y+rk.y)/2, ay, lAnk:la.y, rAnk:ra.y, H, full, hw:Math.abs(lh.x-rh.x)||sw*.6 };
+  const fx = (vis(la)>VIS && vis(ra)>VIS) ? (la.x+ra.x)/2 : hx;
+  return { x:(sx+hx)/2, fx, y:sy, sw, hy:hipY, hipY, kneeY:(lk.y+rk.y)/2, ay, lAnk:la.y, rAnk:ra.y, H, full, hw:Math.abs(lh.x-rh.x)||sw*.6 };
 }
 function regionColor(x0,x1,y0,y1){
   const W=samp.width, H=samp.height;
@@ -350,6 +353,15 @@ function assign(){
   return out;
 }
 
+// lado da pessoa (pelos pés), na imagem espelhada: x > .5 = lado esquerdo da tela
+const SIDE = [];
+function sideOf(i, d){
+  let x = d.b.fx; if(cfg.flip) x = 1-x;
+  const prev = SIDE[i];
+  let ns = x>.5 ? "L" : "R";
+  if(prev && Math.abs(x-.5) < .04) ns = prev; // faixa do meio: mantém o lado anterior
+  SIDE[i] = ns; return ns;
+}
 // detector de pulo: os dois tornozelos e o quadril sobem juntos e depois descem
 const SENS = {baixa:.10, media:.075, alta:.055};
 const J = [];
@@ -396,6 +408,12 @@ function drawFrame(cv, overlay){
   return {cw,ch,map};
 }
 
+function sideNames(){ return cfg.mode==="battle" ? {L:"Esquerda",R:"Direita"} : {L:cfg.sideL||"Esq.",R:cfg.sideR||"Dir."}; }
+function sideLabels(ctx,cw,ch,dpr){
+  const n=sideNames(); ctx.font=`400 ${34*dpr}px Bungee, sans-serif`; ctx.textBaseline="top"; ctx.lineWidth=6*dpr; ctx.strokeStyle="rgba(27,20,48,.85)";
+  ctx.textAlign="left"; ctx.strokeText(n.L,14*dpr,10*dpr); ctx.fillStyle="#ff4f8b"; ctx.fillText(n.L,14*dpr,10*dpr);
+  ctx.textAlign="right"; ctx.strokeText(n.R,cw-14*dpr,10*dpr); ctx.fillStyle="#2fb6ff"; ctx.fillText(n.R,cw-14*dpr,10*dpr);
+}
 function drawPlayers(ctx,cw,ch,map,dpr,assigned,showDivider){
   if(showDivider){
     ctx.fillStyle="rgba(255,79,139,.13)"; ctx.fillRect(0,0,cw/2,ch);
@@ -408,7 +426,8 @@ function drawPlayers(ctx,cw,ch,map,dpr,assigned,showDivider){
     if(!d) return; const [px,py]=map(d.b.x,d.b.y); const c=PCOLORS[i];
     drawSkeleton(ctx,d.lm,map,c,6*dpr);
     ctx.font=`900 ${18*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="top";
-    const okTxt = d.b.full ? "corpo inteiro ✓" : "mostre o corpo todo, dos pés à cabeça";
+    const sd = sideOf(i,d), sn = sideNames()[sd];
+    const okTxt = (d.b.full ? "corpo inteiro ✓" : "mostre o corpo todo, dos pés à cabeça") + "  ·  lado " + sn;
     ctx.lineWidth=5*dpr; ctx.strokeStyle="rgba(27,20,48,.9)"; ctx.strokeText(okTxt,px,py+60*dpr); ctx.fillStyle=d.b.full?"#7be36a":"#ff9a9a"; ctx.fillText(okTxt,px,py+60*dpr);
     ctx.fillStyle=c; ctx.strokeStyle="#fff"; ctx.lineWidth=4*dpr;
     ctx.beginPath(); ctx.arc(px,py-60*dpr,16*dpr,0,7); ctx.fill(); ctx.stroke();
@@ -559,8 +578,9 @@ function drawPip(ctx,cw,ch,dpr,assigned,corner){
   ctx.translate(x+w,y); ctx.scale(-1,1); ctx.drawImage(video,0,0,w,h); ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle="rgba(255,79,139,.28)"; ctx.fillRect(x,y,w/2,h); ctx.fillStyle="rgba(47,182,255,.28)"; ctx.fillRect(x+w/2,y,w/2,h);
   ctx.setLineDash([10*dpr,8*dpr]); ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.moveTo(x+w/2,y); ctx.lineTo(x+w/2,y+h); ctx.stroke(); ctx.setLineDash([]);
+  { const n=sideNames(); ctx.font=`400 ${16*dpr}px Bungee, sans-serif`; ctx.textBaseline="top"; ctx.fillStyle="#fff"; ctx.textAlign="left"; ctx.fillText(n.L,x+8*dpr,y+6*dpr); ctx.textAlign="right"; ctx.fillText(n.R,x+w-8*dpr,y+6*dpr); }
   const pmap=(lx,ly)=>[x+(1-lx)*w, y+ly*h];
-  assigned.forEach((d,i)=>{ if(!d) return; drawSkeleton(ctx,d.lm,pmap,d.b.full?PCOLORS[i]:"#ff6b6b",3*dpr); const px=x+(1-d.b.x)*w, py=y+d.b.y*h;
+  assigned.forEach((d,i)=>{ if(!d) return; drawSkeleton(ctx,d.lm,pmap,d.b.full?PCOLORS[i]:"#ff6b6b",3*dpr); const px=x+(1-d.b.fx)*w, py=y+d.b.y*h;
     ctx.fillStyle=PCOLORS[i]; ctx.strokeStyle="#fff"; ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.arc(px,py,9*dpr,0,7); ctx.fill(); ctx.stroke();
     ctx.font=`900 ${13*dpr}px Nunito, system-ui`; ctx.textAlign="center"; ctx.textBaseline="bottom"; ctx.fillStyle="#fff"; ctx.fillText(cfg.players[i].name+(d.b.full?"":" (pés!)"),px,py-12*dpr); });
   ctx.restore();
@@ -604,7 +624,7 @@ function tick(now, assigned, jev){
   if(G.paused || G.phase==="idle" || G.phase==="end") return;
   const left = Math.max(0, G.dur-(now-G.t0)); const secs = Math.ceil(left/1000);
   if(G.phase==="pick"){
-    assigned.forEach((d,i)=>{ if(d){ const ns = d.b.x>.5?"L":"R"; if(G.st[i].side!==ns){ G.st[i].side=ns; hop(ns,.3); } } });
+    assigned.forEach((d,i)=>{ if(d){ const ns = sideOf(i,d); if(G.st[i].side!==ns){ G.st[i].side=ns; hop(ns,.3); } } });
     $("#phase").textContent="Escolham um lado!"; $("#count").textContent=secs;
     if(secs<=3 && secs!==G.lastSpoken && secs>0){ G.lastSpoken=secs; beep(660,.12); }
     if(left<=0){
@@ -677,13 +697,14 @@ function loadYT(){ if(ytPromise) return ytPromise;
     const s=document.createElement("script"); s.src="https://www.youtube.com/iframe_api"; document.head.append(s); });
   return ytPromise; }
 
+const DEFAULT_CUES = { maahbisMPrw: [18.69,19.16,19.63,20.1,20.57,21.04,21.51,21.97,22.44,22.91,23.38,23.85,24.32,24.79,25.26,25.72,26.19,26.66,27.13,27.6,28.07,28.54,29.01,29.47,29.94,30.41,30.88,31.35,31.82,32.29,32.76,33.22,33.69,34.16,34.63,35.1,35.57,36.04,36.51,36.97,37.44,37.91,38.38,38.85,39.32,39.79,40.26,40.72,41.19,41.66,42.13,42.6,43.07,43.54,44.01,44.47,44.94,45.41,45.88,46.35,46.82,47.29,47.76,48.22,48.69,49.16,49.63,50.1,50.57,51.04,51.51,51.97,68.74,69.21,69.68,70.15,70.61,71.08,71.55,72.02,72.49,72.96,73.43,73.9,74.36,74.83,75.3,75.77,76.24,76.71,77.18,77.65,78.11,78.58,79.05,79.52,79.99,80.46,80.93,81.4,81.86,82.33,82.8,83.27,83.74,84.21,84.68,85.15,85.61,86.08,86.55,87.02,87.49,87.96,88.43,88.9,89.36,89.83,90.3,90.77,91.24,91.71,92.18,92.65,93.11,93.58,94.05,94.52,94.99,95.46,117.17,117.64,118.1,118.57,119.04,119.51,119.98,120.45,120.92,121.39,121.85,122.32,122.79,123.26,123.73,124.2,124.67,125.14,125.6,126.07,126.54,127.01,127.48,127.95,128.42,128.89,129.35,129.82,130.29,130.76,131.23,131.7,132.17,132.64,133.1,133.57,134.04,134.51,134.98,135.45,135.92,136.39,136.85,137.32,137.79,138.26,138.73,139.2,139.67,140.14,140.6,141.07,141.54,142.01,142.48,142.95,143.42,143.89,144.35,144.82,145.29,145.76,146.23,146.7,147.17,147.64,148.1,148.57,149.04,149.51,149.98,150.45,150.92,151.39,151.85,152.32,152.79,153.26,153.73,154.2,154.67,155.14,155.6,156.07,156.54,157.01,157.48,157.95,158.42,158.89,159.35,159.82,160.29,160.76,161.23,161.7,162.17,162.64,163.1,163.57,164.04,164.51,164.98,165.45,165.92,166.39] }; // analisado do vídeo: 128 BPM, 3 rodadas
 const V = { player:null, id:null, cues:[], st:[], pts:[], pops:[], marking:false, lastT:0, flash:0, ended:false };
 const cueKey = ()=> "jb-cues-"+V.id;
-function getCues(id){ try{ return JSON.parse(localStorage.getItem("jb-cues-"+id)||"[]"); }catch(e){ return []; } }
+function getCues(id){ let c=[]; try{ c=JSON.parse(localStorage.getItem("jb-cues-"+id)||"[]"); }catch(e){} return c.length ? c : (DEFAULT_CUES[id]||[]).slice(); }
 function saveCues(){ try{ localStorage.setItem(cueKey(), JSON.stringify(V.cues)); }catch(e){} }
 function cueInfo(){ const id=ytId(cfg.yt); const n=id?getCues(id).length:0;
   $("#cueInfo").textContent = !id ? "Cole um link do YouTube válido." :
-    n ? `Este vídeo já tem ${n} tempos de pulo marcados: o app vai dar PERFEITO ou BOM pra cada pulo no tempo.` :
+    n ? (DEFAULT_CUES[id] && !localStorage.getItem("jb-cues-"+id) ? `Tempos já analisados: ${n} pulos em 3 rodadas, no ritmo da música (128 batidas por minuto). Cada pulo no tempo vale PERFEITO ou BOM.` : `Este vídeo tem ${n} tempos de pulo marcados: o app vai dar PERFEITO ou BOM pra cada pulo no tempo.`) :
     "Este vídeo ainda não tem tempos marcados. Na primeira vez, toque em “Marcar tempos” durante o vídeo e aperte ESPAÇO a cada vez que o vídeo mandar pular. Depois disso o app passa a pontuar o tempo certo."; }
 cueInfo(); setMode(cfg.mode);
 
@@ -731,7 +752,7 @@ addEventListener("keydown", e=>{ if($("#vgame").classList.contains("hidden")) re
 function togglePause(){ if(!V.player) return; V.player.getPlayerState()===1 ? V.player.pauseVideo() : V.player.playVideo(); }
 $("#vPause").onclick = togglePause;
 $("#vMark").onclick = ()=>{ if(!V.marking && V.cues.length){ /* continua acrescentando */ } setMarking(!V.marking); if(V.marking){ V.player?.seekTo(0,true); V.player?.playVideo(); resetVideoScores(); } };
-$("#vClear").onclick = ()=>{ if($("#vClear").dataset.sure){ V.cues=[]; saveCues(); setMarking(V.marking); delete $("#vClear").dataset.sure; $("#vClear").textContent="Apagar tempos"; cueInfo(); }
+$("#vClear").onclick = ()=>{ if($("#vClear").dataset.sure){ try{ localStorage.removeItem(cueKey()); }catch(e){} V.cues=getCues(V.id); setMarking(V.marking); delete $("#vClear").dataset.sure; $("#vClear").textContent="Apagar tempos"; cueInfo(); }
   else { $("#vClear").dataset.sure="1"; $("#vClear").textContent="Toque de novo pra apagar"; setTimeout(()=>{ delete $("#vClear").dataset.sure; $("#vClear").textContent="Apagar tempos"; },3000); } };
 $("#vRestart").onclick = $("#vAgain").onclick = ()=>{ resetVideoScores(); V.player?.seekTo(0,true); V.player?.playVideo(); };
 $("#vQuit").onclick = $("#vBack").onclick = ()=>{ try{ V.player?.pauseVideo(); }catch(e){} setMarking(false); vmsg(""); $("#vgame").classList.add("hidden"); $("#setup").classList.remove("hidden"); renderPlayers(); cueInfo(); try{document.exitFullscreen?.()}catch(e){} };
@@ -740,8 +761,8 @@ function videoTick(now, assigned, jev){
   if(!V.player?.getCurrentTime) return;
   const t=V.player.getCurrentTime(), playing=V.player.getPlayerState()===1;
   if(t < V.lastT-1){ V.st.forEach(s=>s.used.clear()); }
-  assigned.forEach((d,i)=>{ const s=V.st[i]; if(d&&s) s.side = d.b.x>.5?"L":"R"; });
-  if(playing) for(const e of jev){ const s=V.st[e.i]; if(!s) continue; s.jumps++; scoreJump(e.i, t-(now/1000-e.up)); }
+  assigned.forEach((d,i)=>{ const s=V.st[i]; if(d&&s) s.side = sideOf(i,d); });
+  if(playing) for(const e of jev){ const s=V.st[e.i]; if(!s) continue; s.jumps++; scoreJump(e.i, t-0.08); }
   if(playing && V.cues.some(c=>c>V.lastT && c<=t)) V.flash=1;
   V.lastT=t;
   if(Math.floor(now/250)!==V._hud){ V._hud=Math.floor(now/250); renderVHud(); }
@@ -751,8 +772,8 @@ function scoreJump(i,tj){
   if(V.marking || !V.cues.length){ add=1; txt="+1"; col="#ffffff"; }
   else {
     let best=-1, bd=9; V.cues.forEach((c,k)=>{ if(s.used.has(k)) return; const d=Math.abs(c-tj); if(d<bd){ bd=d; best=k; } });
-    if(bd<=.22){ add=3; txt="PERFEITO! +3"; col="#ffd23f"; s.perfect++; s.used.add(best); }
-    else if(bd<=.5){ add=1; txt="BOM! +1"; col="#7be36a"; s.good++; s.used.add(best); }
+    if(bd<=.11){ add=3; txt="PERFEITO! +3"; col="#ffd23f"; s.perfect++; s.used.add(best); }
+    else if(bd<=.22){ add=1; txt="BOM! +1"; col="#7be36a"; s.good++; s.used.add(best); }
     else { add=0; txt="fora do tempo"; col="#ff9a9a"; }
   }
   V.pts[i]+=add; if(s.side) V.side[s.side]+=add; V.pops.push({i,txt,col,life:70});
@@ -830,7 +851,7 @@ function loop(now){
   }
 
   if(!$("#setup").classList.contains("hidden")){
-    drawFrame($("#prev"), (ctx,cw,ch,map,dpr)=>drawPlayers(ctx,cw,ch,map,dpr,assigned,false));
+    drawFrame($("#prev"), (ctx,cw,ch,map,dpr)=>{ drawPlayers(ctx,cw,ch,map,dpr,assigned,true); sideLabels(ctx,cw,ch,dpr); });
   } else if(!$("#vgame").classList.contains("hidden")){
     videoTick(now, assigned, jev);
     videoDraw(assigned);
